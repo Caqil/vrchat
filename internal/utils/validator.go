@@ -2,6 +2,8 @@ package utils
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"regexp"
 	"strings"
 	"time"
@@ -253,7 +255,15 @@ func getErrorMessage(fe validator.FieldError) string {
 	}
 }
 
-// Additional helper functions for middleware compatibility
+// GenerateSessionID generates a random session ID string.
+func GenerateSessionID() string {
+	bytes := make([]byte, 16)
+	_, err := rand.Read(bytes)
+	if err != nil {
+		return ""
+	}
+	return hex.EncodeToString(bytes)
+}
 
 // IsUserBanned checks if user is banned
 func IsUserBanned(userID string) bool {
