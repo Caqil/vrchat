@@ -6,7 +6,6 @@
 /* CSS Variables */
 :root {
     --primary: #667eea;
-    --primary-dark: #764ba2;
     --secondary: #f093fb;
     --success: #4caf50;
     --warning: #ff9800;
@@ -32,7 +31,7 @@
 
 body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--primary);
     min-height: 100vh;
     color: #333;
     line-height: 1.6;
@@ -46,7 +45,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -82,7 +81,7 @@ body {
     left: 0;
     width: 100%;
     height: 100%;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: var(--primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -163,10 +162,7 @@ body {
 .logo {
     font-size: 24px;
     font-weight: 700;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
+    color: var(--secondary);
     margin-bottom: 5px;
 }
 
@@ -203,7 +199,7 @@ body {
 
 .nav-link:hover,
 .nav-link.active {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--primary);
     color: white;
     transform: translateX(5px);
     box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
@@ -333,7 +329,7 @@ body {
     width: 35px;
     height: 35px;
     border-radius: 50%;
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--primary);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -442,7 +438,7 @@ body {
 }
 
 .stat-card {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--primary);
     color: white;
     padding: 25px;
     border-radius: var(--border-radius);
@@ -592,7 +588,7 @@ body {
 }
 
 .btn-primary {
-    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    background: var(--primary);
     color: white;
 }
 

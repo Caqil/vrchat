@@ -20,7 +20,7 @@ func SetupRoutes(router *gin.Engine, hub *websocket.Hub) {
 	settingsService := services.NewSettingsService(db)
 	coturnService := services.NewCoturnService(db)
 	matchingService := services.NewMatchingService(db)
-	authService := services.NewAuthService(db) // We'll need to create this
+	authService := services.NewAuthService(db)
 
 	// Initialize handlers with dependencies
 	userHandler := handlers.NewUserHandler(userService)
@@ -117,11 +117,14 @@ func SetupRoutes(router *gin.Engine, hub *websocket.Hub) {
 		}
 	}
 
-	// Authentication routes
+	// Authentication routes (includes both user and admin auth)
 	SetupAuthRoutes(router, authHandler)
 
-	// Admin routes
-	SetupAdminRoutes(router, adminHandler)
+	// Admin routes (FIXED - now includes authHandler parameter)
+	SetupAdminRoutes(router, adminHandler, authHandler)
+
+	// WebSocket routes
+	SetupWebSocketRoutes(router, hub)
 
 	// Static files
 	// router.Static("/static", "./web/static")
