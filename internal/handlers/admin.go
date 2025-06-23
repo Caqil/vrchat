@@ -416,7 +416,7 @@ func (h *AdminHandler) GetActiveChats(c *gin.Context) {
 
 func (h *AdminHandler) EndChat(c *gin.Context) {
 	chatID := c.Param("id")
-	objectID, err := primitive.ObjectIDFromHex(chatID)
+	_, err := primitive.ObjectIDFromHex(chatID)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid chat ID")
 		return
@@ -427,7 +427,9 @@ func (h *AdminHandler) EndChat(c *gin.Context) {
 	}
 	c.ShouldBindJSON(&endData)
 
-	err = h.chatService.EndChat(objectID, endData.Reason)
+	// Provide three string arguments as required by EndChat
+	adminID := c.GetString("admin_id")
+	err = h.chatService.EndChat(chatID, endData.Reason, adminID)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to end chat")
 		return
@@ -442,13 +444,14 @@ func (h *AdminHandler) EndChat(c *gin.Context) {
 
 func (h *AdminHandler) GetChatMessages(c *gin.Context) {
 	chatID := c.Param("id")
-	objectID, err := primitive.ObjectIDFromHex(chatID)
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
+
+	messages, err := h.chatService.GetChatMessages(chatID, page, limit)
 	if err != nil {
-		utils.ErrorResponse(c, http.StatusBadRequest, "Invalid chat ID")
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch chat messages")
 		return
 	}
-
-	messages := h.chatService.GetChatMessages(objectID)
 	utils.SuccessResponse(c, messages)
 }
 
@@ -789,7 +792,11 @@ func (h *AdminHandler) ResetToDefaults(c *gin.Context) {
 }
 
 func (h *AdminHandler) GetGeneralSettings(c *gin.Context) {
-	settings := h.settingsService.GetGeneralSettings()
+	settings, err := h.settingsService.GetGeneralSettings()
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch general settings")
+		return
+	}
 	utils.SuccessResponse(c, settings)
 }
 
@@ -810,7 +817,11 @@ func (h *AdminHandler) UpdateGeneralSettings(c *gin.Context) {
 }
 
 func (h *AdminHandler) GetModerationSettings(c *gin.Context) {
-	settings := h.settingsService.GetModerationSettings()
+	settings, err := h.settingsService.GetModerationSettings()
+	if err != nil {
+		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to fetch moderation settings")
+		return
+	}
 	utils.SuccessResponse(c, settings)
 }
 
@@ -1446,7 +1457,23 @@ func (h *AdminHandler) CreateAPIKey(c *gin.Context) {
 		return
 	}
 
-	logger.LogAdminAction(c.GetString("admin_id"), "api_key_created", apiKey.ID, map[string]interface{}{
+	// Access ID from map - try common field names
+	var keyID string
+	if id, ok := apiKey["id"]; ok {
+		if idStr, ok := id.(string); ok {
+			keyID = idStr
+		}
+	} else if id, ok := apiKey["_id"]; ok {
+		if idStr, ok := id.(string); ok {
+			keyID = idStr
+		}
+	} else if id, ok := apiKey["key_id"]; ok {
+		if idStr, ok := id.(string); ok {
+			keyID = idStr
+		}
+	}
+
+	logger.LogAdminAction(c.GetString("admin_id"), "api_key_created", keyID, map[string]interface{}{
 		"name":        keyData.Name,
 		"permissions": keyData.Permissions,
 	})

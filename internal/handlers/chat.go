@@ -12,14 +12,14 @@ import (
 	"vrchat/pkg/logger"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
+	gorillaws "github.com/gorilla/websocket"
 )
 
 type ChatHandler struct {
 	chatService     *services.ChatService
 	matchingService *services.MatchingService
 	hub             *websocket.Hub
-	upgrader        websocket.Upgrader
+	upgrader        gorillaws.Upgrader // Now use the aliased gorilla websocket
 }
 
 func NewChatHandler(chatService *services.ChatService, matchingService *services.MatchingService, hub *websocket.Hub) *ChatHandler {
@@ -27,7 +27,7 @@ func NewChatHandler(chatService *services.ChatService, matchingService *services
 		chatService:     chatService,
 		matchingService: matchingService,
 		hub:             hub,
-		upgrader: websocket.Upgrader{
+		upgrader: gorillaws.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {

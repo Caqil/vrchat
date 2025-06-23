@@ -23,7 +23,6 @@ func NewSettingsHandler(settingsService *services.SettingsService) *SettingsHand
 }
 
 // Public Settings (read-only, for general app info)
-
 func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 	settings, err := h.settingsService.GetPublicSettings()
 	if err != nil {
@@ -31,16 +30,41 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 		return
 	}
 
+	// Helper function to safely get values from map with default fallbacks
+	getString := func(key, defaultValue string) string {
+		if val, ok := settings[key].(string); ok {
+			return val
+		}
+		return defaultValue
+	}
+
+	getInt := func(key string, defaultValue int) int {
+		if val, ok := settings[key].(int); ok {
+			return val
+		}
+		if val, ok := settings[key].(float64); ok {
+			return int(val)
+		}
+		return defaultValue
+	}
+
+	getBool := func(key string, defaultValue bool) bool {
+		if val, ok := settings[key].(bool); ok {
+			return val
+		}
+		return defaultValue
+	}
+
 	// Filter out sensitive information for public consumption
 	publicSettings := map[string]interface{}{
-		"app_name":                settings.AppName,
-		"app_description":         settings.AppDescription,
-		"max_users_per_room":      settings.MaxUsersPerRoom,
-		"chat_timeout":            settings.ChatTimeout,
-		"enable_age_verification": settings.EnableAgeVerification,
-		"minimum_age":             settings.MinimumAge,
-		"maintenance_mode":        settings.MaintenanceMode,
-		"maintenance_message":     settings.MaintenanceMessage,
+		"app_name":                getString("app_name", "Omegle Clone"),
+		"app_description":         getString("app_description", "Random video chat application"),
+		"max_users_per_room":      getInt("max_users_per_room", 2),
+		"chat_timeout":            getInt("chat_timeout", 30),
+		"enable_age_verification": getBool("enable_age_verification", false),
+		"minimum_age":             getInt("minimum_age", 13),
+		"maintenance_mode":        getBool("maintenance_mode", false),
+		"maintenance_message":     getString("maintenance_message", "System maintenance in progress"),
 		"supported_chat_types":    []string{"text", "video", "audio"},
 		"supported_languages":     h.getSupportedLanguages(),
 		"available_regions":       h.getAvailableRegions(),
@@ -48,8 +72,8 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 			"interest_matching":  true,
 			"region_matching":    true,
 			"language_matching":  true,
-			"profanity_filter":   settings.EnableProfanityFilter,
-			"content_moderation": settings.EnableModeration,
+			"profanity_filter":   getBool("enable_profanity_filter", true),
+			"content_moderation": getBool("enable_moderation", true),
 			"file_sharing":       true,
 			"screen_sharing":     true,
 			"voice_chat":         true,
@@ -59,7 +83,7 @@ func (h *SettingsHandler) GetPublicSettings(c *gin.Context) {
 			"max_message_length":  1000,
 			"max_file_size_mb":    10,
 			"max_interests":       10,
-			"session_timeout_min": settings.ChatTimeout,
+			"session_timeout_min": getInt("chat_timeout", 30),
 		},
 	}
 
@@ -74,7 +98,9 @@ func (h *SettingsHandler) GetUserSettings(c *gin.Context) {
 	userSettings, err := h.settingsService.GetUserSettings(userID)
 	if err != nil {
 		// Return default settings if user settings don't exist
-		userSettings = h.getDefaultUserSettings()
+		defaultSettings := h.getDefaultUserSettings()
+		utils.SuccessResponse(c, defaultSettings)
+		return
 	}
 
 	utils.SuccessResponse(c, userSettings)
@@ -188,7 +214,7 @@ func (h *SettingsHandler) UpdateChatPreferences(c *gin.Context) {
 		"updated_at":           time.Now(),
 	}
 
-	err := h.settingsService.UpdateChatPreferences(userID, preferences)
+	err := h.settingsService.UpdateChatPreferencesFromMap(userID, preferences)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update chat preferences")
 		return
@@ -251,7 +277,7 @@ func (h *SettingsHandler) UpdatePrivacySettings(c *gin.Context) {
 		"updated_at":             time.Now(),
 	}
 
-	err := h.settingsService.UpdatePrivacySettings(userID, privacy)
+	err := h.settingsService.UpdatePrivacySettingsFromMap(userID, privacy)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update privacy settings")
 		return
@@ -329,7 +355,7 @@ func (h *SettingsHandler) UpdateNotificationSettings(c *gin.Context) {
 		"updated_at":                 time.Now(),
 	}
 
-	err := h.settingsService.UpdateNotificationSettings(userID, notifications)
+	err := h.settingsService.UpdateNotificationSettingsFromMap(userID, notifications)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update notification settings")
 		return
@@ -409,7 +435,7 @@ func (h *SettingsHandler) UpdateAccessibilitySettings(c *gin.Context) {
 		"updated_at":            time.Now(),
 	}
 
-	err := h.settingsService.UpdateAccessibilitySettings(userID, accessibility)
+	err := h.settingsService.UpdateAccessibilitySettingsFromMap(userID, accessibility)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to update accessibility settings")
 		return
@@ -458,7 +484,8 @@ func (h *SettingsHandler) BlockUser(c *gin.Context) {
 		return
 	}
 
-	err := h.settingsService.BlockUser(userID, blockData.BlockedUserID, blockData.Reason)
+	now := time.Now()
+	err := h.settingsService.BlockUser(userID, blockData.BlockedUserID, blockData.Reason, &now)
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to block user")
 		return

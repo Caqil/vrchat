@@ -254,6 +254,32 @@ func getErrorMessage(fe validator.FieldError) string {
 		return "This field is invalid"
 	}
 }
+func IsValidUsername(username string) bool {
+	re := regexp.MustCompile(`^[a-zA-Z0-9_]{3,30}$`)
+	return re.MatchString(username)
+}
+func IsValidLanguageCode(code string) bool {
+	if len(code) != 2 {
+		return false
+	}
+	for _, r := range code {
+		if r < 'a' || r > 'z' {
+			return false
+		}
+	}
+	return true
+}
+
+// IsValidEmail checks if the provided email has a valid format.
+func IsValidEmail(email string) bool {
+	// Simple RFC 5322 regex for demonstration; adjust as needed for your requirements.
+	var re = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	return re.MatchString(email)
+}
+func IsValidRegionCode(region string) bool {
+	re := regexp.MustCompile(`^[A-Z]{2,10}$`)
+	return re.MatchString(region)
+}
 
 // GenerateSessionID generates a random session ID string.
 func GenerateSessionID() string {

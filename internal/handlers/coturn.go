@@ -111,7 +111,6 @@ func (h *CoturnHandler) GetRegionalICEServers(c *gin.Context) {
 }
 
 // Protected endpoints for testing and management
-
 func (h *CoturnHandler) TestICEServers(c *gin.Context) {
 	userID := c.GetString("user_id")
 	region := c.DefaultQuery("region", "us-east")
@@ -126,18 +125,17 @@ func (h *CoturnHandler) TestICEServers(c *gin.Context) {
 	// Perform connectivity tests
 	testResults := make([]map[string]interface{}, 0)
 
+	// Simple fix: server is already models.ICEServer, no type checking needed
 	for _, server := range iceServers {
-		if iceServer, ok := server.(models.ICEServer); ok {
-			for _, url := range iceServer.URLs {
-				result := h.testICEServerConnectivity(url, iceServer.Username, iceServer.Credential)
-				testResults = append(testResults, map[string]interface{}{
-					"url":           url,
-					"status":        result.Status,
-					"response_time": result.ResponseTime,
-					"error":         result.Error,
-					"tested_at":     time.Now(),
-				})
-			}
+		for _, url := range server.URLs {
+			result := h.testICEServerConnectivity(url, server.Username, server.Credential)
+			testResults = append(testResults, map[string]interface{}{
+				"url":           url,
+				"status":        result.Status,
+				"response_time": result.ResponseTime,
+				"error":         result.Error,
+				"tested_at":     time.Now(),
+			})
 		}
 	}
 
@@ -149,7 +147,10 @@ func (h *CoturnHandler) TestICEServers(c *gin.Context) {
 		}
 	}
 
-	healthPercentage := float64(successCount) / float64(len(testResults)) * 100
+	var healthPercentage float64
+	if len(testResults) > 0 {
+		healthPercentage = float64(successCount) / float64(len(testResults)) * 100
+	}
 
 	logger.LogUserAction(userID, "ice_servers_tested", map[string]interface{}{
 		"region":         region,

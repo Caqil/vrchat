@@ -379,6 +379,12 @@ func (h *UserHandler) ReportUser(c *gin.Context) {
 		reportData.Severity = "medium"
 	}
 
+	// Convert []string to []models.Evidence
+	convertedEvidence := make([]models.Evidence, len(reportData.Evidence))
+	for i, e := range reportData.Evidence {
+		convertedEvidence[i] = models.Evidence{URL: e}
+	}
+
 	// Create report
 	report := &models.Report{
 		ReporterID:     reporterID,
@@ -388,7 +394,7 @@ func (h *UserHandler) ReportUser(c *gin.Context) {
 		Reason:         reportData.Reason,
 		Category:       reportData.Category,
 		Description:    reportData.Description,
-		Evidence:       reportData.Evidence,
+		Evidence:       convertedEvidence,
 		Severity:       reportData.Severity,
 		Status:         "pending",
 		IPAddress:      c.ClientIP(),

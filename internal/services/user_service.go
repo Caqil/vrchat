@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -1072,6 +1073,668 @@ func (s *UserService) determinePriority(reportType, category string) string {
 	}
 
 	return "medium"
+}
+
+// GetTotalUsers returns the total number of users in the system
+func (s *UserService) GetTotalUsers() int64 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	count, err := s.userCollection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		logger.LogError(err, "Failed to get total users count", nil)
+		return 0
+	}
+
+	return count
+}
+
+// GetOnlineUsers returns the number of currently online users
+func (s *UserService) GetOnlineUsers() int64 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	count, err := s.userCollection.CountDocuments(ctx, bson.M{"is_online": true})
+	if err != nil {
+		logger.LogError(err, "Failed to get online users count", nil)
+		return 0
+	}
+
+	return count
+}
+
+// GetTodaySignups returns the number of users who signed up today
+func (s *UserService) GetTodaySignups() int64 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Get start of today in UTC
+	now := time.Now().UTC()
+	startOfToday := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+
+	filter := bson.M{
+		"created_at": bson.M{
+			"$gte": startOfToday,
+		},
+	}
+
+	count, err := s.userCollection.CountDocuments(ctx, filter)
+	if err != nil {
+		logger.LogError(err, "Failed to get today's signups count", nil)
+		return 0
+	}
+
+	return count
+}
+
+// GetBannedUsers returns the number of banned users (helper method for admin dashboard)
+func (s *UserService) GetBannedUsers() int64 {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	count, err := s.userCollection.CountDocuments(ctx, bson.M{"is_banned": true})
+	if err != nil {
+		logger.LogError(err, "Failed to get banned users count", nil)
+		return 0
+	}
+
+	return count
+}
+
+// GetUserChartData returns user growth data for charts
+func (s *UserService) GetUserChartData(period string) []map[string]interface{} {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Calculate the date range based on period
+	var startDate time.Time
+	var groupFormat string
+
+	now := time.Now().UTC()
+
+	switch period {
+	case "24h":
+		startDate = now.Add(-24 * time.Hour)
+		groupFormat = "%Y-%m-%d %H:00:00" // Group by hour
+	case "7d":
+		startDate = now.Add(-7 * 24 * time.Hour)
+		groupFormat = "%Y-%m-%d" // Group by day
+	case "30d":
+		startDate = now.Add(-30 * 24 * time.Hour)
+		groupFormat = "%Y-%m-%d" // Group by day
+	case "1y":
+		startDate = now.Add(-365 * 24 * time.Hour)
+		groupFormat = "%Y-%m" // Group by month
+	default:
+		startDate = now.Add(-7 * 24 * time.Hour)
+		groupFormat = "%Y-%m-%d"
+	}
+
+	pipeline := []bson.M{
+		{
+			"$match": bson.M{
+				"created_at": bson.M{
+					"$gte": startDate,
+				},
+			},
+		},
+		{
+			"$group": bson.M{
+				"_id": bson.M{
+					"$dateToString": bson.M{
+						"format": groupFormat,
+						"date":   "$created_at",
+					},
+				},
+				"count": bson.M{"$sum": 1},
+			},
+		},
+		{
+			"$sort": bson.M{"_id": 1},
+		},
+	}
+
+	cursor, err := s.userCollection.Aggregate(ctx, pipeline)
+	if err != nil {
+		logger.LogError(err, "Failed to get user chart data", map[string]interface{}{
+			"period": period,
+		})
+		return []map[string]interface{}{}
+	}
+	defer cursor.Close(ctx)
+
+	var results []map[string]interface{}
+	for cursor.Next(ctx) {
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"date":  result["_id"],
+			"count": result["count"],
+		})
+	}
+
+	return results
+}
+
+// GetRegionDistribution returns user distribution by region for charts
+func (s *UserService) GetRegionDistribution() []map[string]interface{} {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	pipeline := []bson.M{
+		{
+			"$group": bson.M{
+				"_id":   "$region",
+				"count": bson.M{"$sum": 1},
+			},
+		},
+		{
+			"$sort": bson.M{"count": -1},
+		},
+	}
+
+	cursor, err := s.userCollection.Aggregate(ctx, pipeline)
+	if err != nil {
+		logger.LogError(err, "Failed to get region distribution", nil)
+		return []map[string]interface{}{}
+	}
+	defer cursor.Close(ctx)
+
+	var results []map[string]interface{}
+	for cursor.Next(ctx) {
+		var result bson.M
+		if err := cursor.Decode(&result); err != nil {
+			continue
+		}
+
+		region := "unknown"
+		if result["_id"] != nil {
+			region = result["_id"].(string)
+		}
+
+		results = append(results, map[string]interface{}{
+			"region": region,
+			"count":  result["count"],
+		})
+	}
+
+	return results
+}
+
+// GetUserAnalytics returns comprehensive user analytics for the admin dashboard
+func (s *UserService) GetUserAnalytics(period string) map[string]interface{} {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	analytics := map[string]interface{}{
+		"total_users":   s.GetTotalUsers(),
+		"online_users":  s.GetOnlineUsers(),
+		"banned_users":  s.GetBannedUsers(),
+		"today_signups": s.GetTodaySignups(),
+		"growth_data":   s.GetUserChartData(period),
+		"region_data":   s.GetRegionDistribution(),
+	}
+
+	// Get user type distribution
+	pipeline := []bson.M{
+		{
+			"$group": bson.M{
+				"_id": bson.M{
+					"$cond": bson.M{
+						"if":   bson.M{"$eq": []interface{}{"$email", ""}},
+						"then": "guest",
+						"else": "registered",
+					},
+				},
+				"count": bson.M{"$sum": 1},
+			},
+		},
+	}
+
+	cursor, err := s.userCollection.Aggregate(ctx, pipeline)
+	if err == nil {
+		var userTypes []map[string]interface{}
+		for cursor.Next(ctx) {
+			var result bson.M
+			if err := cursor.Decode(&result); err == nil {
+				userTypes = append(userTypes, map[string]interface{}{
+					"type":  result["_id"],
+					"count": result["count"],
+				})
+			}
+		}
+		analytics["user_types"] = userTypes
+		cursor.Close(ctx)
+	}
+
+	// Get language distribution
+	languagePipeline := []bson.M{
+		{
+			"$group": bson.M{
+				"_id":   "$language",
+				"count": bson.M{"$sum": 1},
+			},
+		},
+		{
+			"$sort": bson.M{"count": -1},
+		},
+		{
+			"$limit": 10,
+		},
+	}
+
+	cursor, err = s.userCollection.Aggregate(ctx, languagePipeline)
+	if err == nil {
+		var languages []map[string]interface{}
+		for cursor.Next(ctx) {
+			var result bson.M
+			if err := cursor.Decode(&result); err == nil {
+				language := "unknown"
+				if result["_id"] != nil {
+					language = result["_id"].(string)
+				}
+				languages = append(languages, map[string]interface{}{
+					"language": language,
+					"count":    result["count"],
+				})
+			}
+		}
+		analytics["languages"] = languages
+		cursor.Close(ctx)
+	}
+
+	return analytics
+}
+
+// BulkUserAction performs bulk actions on multiple users
+func (s *UserService) BulkUserAction(userIDs []primitive.ObjectID, action string, data map[string]interface{}) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	filter := bson.M{"_id": bson.M{"$in": userIDs}}
+
+	switch action {
+	case "ban":
+		// Bulk ban users
+		reason := "bulk_ban"
+		if r, ok := data["reason"]; ok {
+			reason = r.(string)
+		}
+
+		var expiry *time.Time
+		if duration, ok := data["duration"]; ok {
+			if durationHours, ok := duration.(float64); ok && durationHours > 0 {
+				expiryTime := time.Now().Add(time.Duration(durationHours) * time.Hour)
+				expiry = &expiryTime
+			}
+		}
+
+		update := bson.M{
+			"$set": bson.M{
+				"is_banned":   true,
+				"ban_reason":  reason,
+				"banned_at":   time.Now(),
+				"ban_expires": expiry,
+				"updated_at":  time.Now(),
+			},
+		}
+
+		_, err := s.userCollection.UpdateMany(ctx, filter, update)
+		if err != nil {
+			return fmt.Errorf("failed to bulk ban users: %w", err)
+		}
+
+		// Log ban activity for each user
+		for _, userID := range userIDs {
+			s.logUserActivity(userID, "user_banned", map[string]interface{}{
+				"reason":     reason,
+				"ban_type":   "bulk_action",
+				"expires_at": expiry,
+			}, "", "")
+		}
+
+	case "unban":
+		// Bulk unban users
+		update := bson.M{
+			"$set": bson.M{
+				"is_banned":  false,
+				"updated_at": time.Now(),
+			},
+			"$unset": bson.M{
+				"ban_reason":  "",
+				"banned_at":   "",
+				"ban_expires": "",
+			},
+		}
+
+		_, err := s.userCollection.UpdateMany(ctx, filter, update)
+		if err != nil {
+			return fmt.Errorf("failed to bulk unban users: %w", err)
+		}
+
+		// Log unban activity for each user
+		for _, userID := range userIDs {
+			s.logUserActivity(userID, "user_unbanned", map[string]interface{}{
+				"unban_type": "bulk_action",
+			}, "", "")
+		}
+
+	case "delete":
+		// Bulk soft delete users
+		update := bson.M{
+			"$set": bson.M{
+				"is_deleted": true,
+				"deleted_at": time.Now(),
+				"updated_at": time.Now(),
+			},
+		}
+
+		_, err := s.userCollection.UpdateMany(ctx, filter, update)
+		if err != nil {
+			return fmt.Errorf("failed to bulk delete users: %w", err)
+		}
+
+		// Log deletion activity for each user
+		for _, userID := range userIDs {
+			s.logUserActivity(userID, "user_deleted", map[string]interface{}{
+				"deletion_type": "bulk_soft_delete",
+			}, "", "")
+		}
+
+	case "update_region":
+		// Bulk update user region
+		if region, ok := data["region"]; ok {
+			update := bson.M{
+				"$set": bson.M{
+					"region":     region,
+					"updated_at": time.Now(),
+				},
+			}
+
+			_, err := s.userCollection.UpdateMany(ctx, filter, update)
+			if err != nil {
+				return fmt.Errorf("failed to bulk update region: %w", err)
+			}
+		} else {
+			return fmt.Errorf("region not specified for update_region action")
+		}
+
+	case "update_language":
+		// Bulk update user language
+		if language, ok := data["language"]; ok {
+			update := bson.M{
+				"$set": bson.M{
+					"language":   language,
+					"updated_at": time.Now(),
+				},
+			}
+
+			_, err := s.userCollection.UpdateMany(ctx, filter, update)
+			if err != nil {
+				return fmt.Errorf("failed to bulk update language: %w", err)
+			}
+		} else {
+			return fmt.Errorf("language not specified for update_language action")
+		}
+
+	case "set_offline":
+		// Bulk set users offline
+		update := bson.M{
+			"$set": bson.M{
+				"is_online":  false,
+				"last_seen":  time.Now(),
+				"updated_at": time.Now(),
+			},
+		}
+
+		_, err := s.userCollection.UpdateMany(ctx, filter, update)
+		if err != nil {
+			return fmt.Errorf("failed to bulk set users offline: %w", err)
+		}
+
+	default:
+		return fmt.Errorf("unknown bulk action: %s", action)
+	}
+
+	logger.Info("Bulk user action completed", map[string]interface{}{
+		"action":     action,
+		"user_count": len(userIDs),
+		"data":       data,
+	})
+
+	return nil
+}
+
+// ExportUsers exports user data in the specified format
+func (s *UserService) ExportUsers(format, filterStr string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Fetch both guest users and registered users
+	var allUsers []models.ExportUser
+
+	// Fetch guest users
+	guestUsers, err := s.fetchGuestUsersForExport(ctx, filterStr)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch guest users: %w", err)
+	}
+	allUsers = append(allUsers, guestUsers...)
+
+	// Fetch registered users (if not filtering for guests only)
+	if filterStr != "guests" {
+		registeredUsers, err := s.fetchRegisteredUsersForExport(ctx, filterStr)
+		if err != nil {
+			// Log error but continue with guest users
+			logger.LogError(err, "Failed to fetch registered users for export", nil)
+		} else {
+			allUsers = append(allUsers, registeredUsers...)
+		}
+	}
+
+	switch format {
+	case "csv":
+		return s.exportUsersAsCSV(allUsers)
+	case "json":
+		return s.exportUsersAsJSON(allUsers)
+	case "xlsx":
+		return s.exportUsersAsXLSX(allUsers)
+	default:
+		return nil, fmt.Errorf("unsupported export format: %s", format)
+	}
+}
+
+// fetchGuestUsersForExport fetches guest users from the main users collection
+func (s *UserService) fetchGuestUsersForExport(ctx context.Context, filterStr string) ([]models.ExportUser, error) {
+	// Build filter for guest users
+	filter := bson.M{}
+	if filterStr != "" {
+		switch filterStr {
+		case "online":
+			filter["is_online"] = true
+		case "banned":
+			filter["is_banned"] = true
+		case "registered":
+			// Skip guest users if filtering for registered only
+			return []models.ExportUser{}, nil
+		}
+	}
+
+	cursor, err := s.userCollection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var users []models.User
+	if err = cursor.All(ctx, &users); err != nil {
+		return nil, err
+	}
+
+	// Convert to ExportUser format
+	exportUsers := make([]models.ExportUser, len(users))
+	for i, user := range users {
+		exportUsers[i] = models.ExportUser{
+			ID:        user.ID.Hex(),
+			Email:     "guest", // Guest users don't have email
+			Username:  "guest", // Guest users don't have username
+			SessionID: user.SessionID,
+			UserType:  "guest",
+			Region:    user.Region,
+			Language:  user.Language,
+			Country:   user.Country,
+			City:      user.City,
+			IsOnline:  user.IsOnline,
+			IsBanned:  user.IsBanned,
+			CreatedAt: user.CreatedAt,
+			LastSeen:  user.LastSeen,
+			Interests: user.Interests,
+		}
+	}
+
+	return exportUsers, nil
+}
+
+// fetchRegisteredUsersForExport fetches registered users from the registered_users collection
+func (s *UserService) fetchRegisteredUsersForExport(ctx context.Context, filterStr string) ([]models.ExportUser, error) {
+	registeredCollection := s.db.Collection("registered_users")
+
+	// Build filter for registered users
+	filter := bson.M{}
+	if filterStr != "" {
+		switch filterStr {
+		case "banned":
+			filter["is_banned"] = true
+		case "guests":
+			// Skip registered users if filtering for guests only
+			return []models.ExportUser{}, nil
+		}
+	}
+
+	cursor, err := registeredCollection.Find(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(ctx)
+
+	var users []models.RegisteredUser
+	if err = cursor.All(ctx, &users); err != nil {
+		return nil, err
+	}
+
+	// Convert to ExportUser format
+	exportUsers := make([]models.ExportUser, len(users))
+	for i, user := range users {
+		lastSeen := user.CreatedAt
+		if user.LastLogin != nil {
+			lastSeen = *user.LastLogin
+		}
+
+		exportUsers[i] = models.ExportUser{
+			ID:        user.ID.Hex(),
+			Email:     user.Email,
+			Username:  user.Username,
+			SessionID: "", // Registered users don't have session IDs like guests
+			UserType:  "registered",
+			Region:    user.Region,
+			Language:  user.Language,
+			Country:   "", // Registered users might not have country/city
+			City:      "",
+			IsOnline:  false, // Registered users online status not tracked same way
+			IsBanned:  user.IsBanned,
+			CreatedAt: user.CreatedAt,
+			LastSeen:  lastSeen,
+			Interests: user.Interests,
+		}
+	}
+
+	return exportUsers, nil
+}
+
+// exportUsersAsCSV exports users as CSV format
+func (s *UserService) exportUsersAsCSV(users []models.ExportUser) ([]byte, error) {
+	var buf strings.Builder
+
+	// Write CSV header
+	buf.WriteString("ID,Email,Username,Session ID,User Type,Region,Language,Country,City,Is Online,Is Banned,Created At,Last Seen,Interests\n")
+
+	// Write user data
+	for _, user := range users {
+		interests := strings.Join(user.Interests, ";")
+
+		line := fmt.Sprintf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%t,%t,%s,%s,%s\n",
+			user.ID,
+			user.Email,
+			user.Username,
+			user.SessionID,
+			user.UserType,
+			user.Region,
+			user.Language,
+			user.Country,
+			user.City,
+			user.IsOnline,
+			user.IsBanned,
+			user.CreatedAt.Format("2006-01-02 15:04:05"),
+			user.LastSeen.Format("2006-01-02 15:04:05"),
+			interests,
+		)
+		buf.WriteString(line)
+	}
+
+	return []byte(buf.String()), nil
+}
+
+// exportUsersAsJSON exports users as JSON format
+func (s *UserService) exportUsersAsJSON(users []models.ExportUser) ([]byte, error) {
+	data := map[string]interface{}{
+		"users":       users,
+		"total_count": len(users),
+		"exported_at": time.Now(),
+		"format":      "json",
+	}
+
+	return json.Marshal(data)
+}
+
+// exportUsersAsXLSX exports users as Excel XLSX format
+func (s *UserService) exportUsersAsXLSX(users []models.ExportUser) ([]byte, error) {
+	// Note: This is a simplified implementation
+	// For production, you'd want to use a proper XLSX library like excelize
+
+	// For now, we'll return CSV-like data with Excel headers
+	// You should implement proper XLSX generation using a library like:
+	// github.com/360EntSecGroup-Skylar/excelize/v2
+
+	var buf strings.Builder
+
+	// Excel-style CSV that Excel can import
+	buf.WriteString("ID\tEmail\tUsername\tSession ID\tUser Type\tRegion\tLanguage\tCountry\tCity\tIs Online\tIs Banned\tCreated At\tLast Seen\tInterests\n")
+
+	for _, user := range users {
+		interests := strings.Join(user.Interests, ";")
+
+		line := fmt.Sprintf("%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%t\t%t\t%s\t%s\t%s\n",
+			user.ID,
+			user.Email,
+			user.Username,
+			user.SessionID,
+			user.UserType,
+			user.Region,
+			user.Language,
+			user.Country,
+			user.City,
+			user.IsOnline,
+			user.IsBanned,
+			user.CreatedAt.Format("2006-01-02 15:04:05"),
+			user.LastSeen.Format("2006-01-02 15:04:05"),
+			interests,
+		)
+		buf.WriteString(line)
+	}
+
+	return []byte(buf.String()), nil
 }
 
 // updateUserProfileStats updates user profile statistics

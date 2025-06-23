@@ -10,17 +10,18 @@ import (
 	"vrchat/pkg/logger"
 
 	"github.com/gin-gonic/gin"
+	gorillaws "github.com/gorilla/websocket"
 )
 
 type WebSocketHandler struct {
 	hub      *websocket.Hub
-	upgrader websocket.Upgrader
+	upgrader gorillaws.Upgrader
 }
 
 func NewWebSocketHandler(hub *websocket.Hub) *WebSocketHandler {
 	return &WebSocketHandler{
 		hub: hub,
-		upgrader: websocket.Upgrader{
+		upgrader: gorillaws.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
 			CheckOrigin: func(r *http.Request) bool {

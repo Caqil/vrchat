@@ -63,6 +63,7 @@ func Init() {
 		instance = NewLogger(config)
 	})
 }
+func LogSystemAction(action string, metadata map[string]interface{})
 
 // NewLogger creates a new logger instance
 func NewLogger(config Config) *Logger {
