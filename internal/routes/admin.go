@@ -31,6 +31,47 @@ func SetupAdminRoutes(router *gin.Engine, adminHandler *handlers.AdminHandler, a
 
 		// PROTECTED admin endpoints (require admin authentication)
 		protected := adminAPI.Group("/")
+		settings := protected.Group("/settings")
+		{
+
+			// Moderation Settings
+			settings.GET("/moderation", adminHandler.GetModerationSettings)
+			settings.PUT("/moderation", adminHandler.UpdateModerationSettings)
+
+			// Additional settings endpoints
+			settings.GET("/backup", adminHandler.BackupSettings)
+			settings.POST("/restore", adminHandler.RestoreSettings)
+			settings.POST("/reset", adminHandler.ResetToDefaults)
+		}
+
+		// Analytics routes - ADD THIS SECTION
+		analytics := protected.Group("/analytics")
+		{
+			analytics.GET("/overview", adminHandler.GetAnalyticsOverview)
+			analytics.GET("/users", adminHandler.GetUserAnalytics)
+			analytics.GET("/chats", adminHandler.GetChatAnalytics)
+			analytics.GET("/regions", adminHandler.GetRegionAnalytics)
+			analytics.GET("/performance", adminHandler.GetPerformanceAnalytics)
+			analytics.POST("/export", adminHandler.ExportAnalytics)
+		}
+
+		// System Info routes - ADD THIS SECTION
+		system := protected.Group("/system")
+		{
+			system.GET("/info", adminHandler.GetSystemInfo)
+			system.GET("/health", adminHandler.GetSystemHealth)
+			system.GET("/logs", adminHandler.GetSystemLogs)
+			system.POST("/maintenance", adminHandler.ToggleMaintenanceMode)
+			system.POST("/cache/clear", adminHandler.ClearCache)
+			system.POST("/database/cleanup", adminHandler.CleanupDatabase)
+			system.POST("/backup", adminHandler.CreateBackup)
+
+			// COTURN management
+			system.GET("/coturn", adminHandler.GetCoturnServers)
+			system.PUT("/coturn/:id", adminHandler.UpdateCoturnServer)
+			system.DELETE("/coturn/:id", adminHandler.DeleteCoturnServer)
+			system.POST("/coturn/:id/test", adminHandler.TestCoturnServer)
+		}
 		protected.Use(middleware.AdminAuth()) // Only protect these routes
 		{
 			// Auth verification and logout (protected)
