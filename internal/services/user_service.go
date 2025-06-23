@@ -1832,3 +1832,565 @@ func (s *UserService) validateProfileUpdate(updateData map[string]interface{}) e
 
 	return nil
 }
+
+// Add these methods to your internal/services/user_service.go file
+
+// ================================
+// User Existence & Validation Methods
+// ================================
+
+// CheckUsernameExists checks if a username already exists
+func (s *UserService) CheckUsernameExists(username string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check in registered users collection
+	count, err := s.db.Collection("registered_users").CountDocuments(ctx, bson.M{"username": username})
+	if err != nil {
+		logger.LogError(err, "Failed to check username existence", map[string]interface{}{
+			"username": username,
+		})
+		return false, fmt.Errorf("failed to check username: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// UserExists checks if a user exists by ID
+func (s *UserService) UserExists(userID primitive.ObjectID) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Check in guest users collection first
+	count, err := s.userCollection.CountDocuments(ctx, bson.M{"_id": userID})
+	if err != nil {
+		logger.LogError(err, "Failed to check user existence in guest collection", map[string]interface{}{
+			"user_id": userID.Hex(),
+		})
+		return false, fmt.Errorf("failed to check user existence: %w", err)
+	}
+
+	if count > 0 {
+		return true, nil
+	}
+
+	// Check in registered users collection
+	count, err = s.db.Collection("registered_users").CountDocuments(ctx, bson.M{"_id": userID})
+	if err != nil {
+		logger.LogError(err, "Failed to check user existence in registered collection", map[string]interface{}{
+			"user_id": userID.Hex(),
+		})
+		return false, fmt.Errorf("failed to check user existence: %w", err)
+	}
+
+	return count > 0, nil
+}
+
+// ================================
+// Report Management
+// ================================
+
+// CreateReport creates a new user report
+func (s *UserService) CreateReport(report *models.Report) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Set default values
+	if report.Status == "" {
+		report.Status = "pending"
+	}
+	if report.Priority == 0 {
+		report.Priority = s.calculateReportPriority(report)
+	}
+
+	report.CreatedAt = time.Now()
+	report.UpdatedAt = time.Now()
+
+	// Insert the report
+	result, err := s.reportCollection.InsertOne(ctx, report)
+	if err != nil {
+		logger.LogError(err, "Failed to create report", map[string]interface{}{
+			"reporter_id":      report.ReporterID,
+			"reported_user_id": report.ReportedUserID,
+			"reason":           report.Reason,
+		})
+		return "", fmt.Errorf("failed to create report: %w", err)
+	}
+
+	reportID := result.InsertedID.(primitive.ObjectID).Hex()
+
+	// Log the report creation
+	reporterObjID, err := primitive.ObjectIDFromHex(report.ReporterID)
+	if err != nil {
+		logger.LogError(err, "Invalid reporter ID", map[string]interface{}{
+			"reporter_id": report.ReporterID,
+		})
+	} else {
+		s.logUserActivity(reporterObjID, "report_created", map[string]interface{}{
+			"report_id":        reportID,
+			"reported_user_id": report.ReportedUserID,
+			"reason":           report.Reason,
+			"category":         report.Category,
+			"severity":         report.Severity,
+		}, report.IPAddress, report.UserAgent)
+	}
+
+	// Check for auto-moderation triggers
+	go s.checkAutoModerationTriggers(report.ReportedUserID, report.Category)
+
+	logger.LogUserAction(report.ReporterID, "report_submitted", map[string]interface{}{
+		"report_id":        reportID,
+		"reported_user_id": report.ReportedUserID,
+		"category":         report.Category,
+		"severity":         report.Severity,
+	})
+
+	return reportID, nil
+}
+
+// calculateReportPriority calculates priority based on severity and category
+func (s *UserService) calculateReportPriority(report *models.Report) int {
+	priority := 3 // default medium priority
+
+	switch report.Severity {
+	case "critical":
+		priority = 5
+	case "high":
+		priority = 4
+	case "medium":
+		priority = 3
+	case "low":
+		priority = 2
+	}
+
+	// Increase priority for certain categories
+	switch report.Category {
+	case "threats", "hate_speech", "underage":
+		priority = 5
+	case "harassment", "inappropriate_content":
+		if priority < 4 {
+			priority = 4
+		}
+	}
+
+	return priority
+}
+
+// checkAutoModerationTriggers checks if auto-moderation should be triggered
+func (s *UserService) checkAutoModerationTriggers(reportedUserID, category string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Count recent reports against this user
+	recentReports, err := s.reportCollection.CountDocuments(ctx, bson.M{
+		"reported_user_id": reportedUserID,
+		"created_at":       bson.M{"$gte": time.Now().Add(-24 * time.Hour)},
+		"status":           bson.M{"$ne": "dismissed"},
+	})
+
+	if err != nil {
+		logger.LogError(err, "Failed to count recent reports for auto-moderation", map[string]interface{}{
+			"reported_user_id": reportedUserID,
+		})
+		return
+	}
+
+	// Get auto-moderation threshold from settings
+	threshold := int64(3) // default threshold
+
+	if recentReports >= threshold {
+		// Trigger auto-moderation
+		s.triggerAutoModeration(reportedUserID, category, recentReports)
+	}
+}
+
+// triggerAutoModeration handles automatic moderation actions
+func (s *UserService) triggerAutoModeration(userID, category string, reportCount int64) {
+	_, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	objectID, err := primitive.ObjectIDFromHex(userID)
+	if err != nil {
+		logger.LogError(err, "Invalid user ID for auto-moderation", map[string]interface{}{
+			"user_id": userID,
+		})
+		return
+	}
+
+	// Determine moderation action based on category and report count
+	var action string
+	var banDuration time.Duration
+
+	switch category {
+	case "threats", "hate_speech", "underage":
+		action = "permanent_ban"
+	case "harassment", "inappropriate_content":
+		if reportCount >= 5 {
+			action = "temporary_ban"
+			banDuration = 24 * time.Hour
+		} else {
+			action = "warning"
+		}
+	default:
+		if reportCount >= 10 {
+			action = "temporary_ban"
+			banDuration = 1 * time.Hour
+		} else {
+			action = "warning"
+		}
+	}
+
+	// Apply moderation action
+	switch action {
+	case "permanent_ban":
+		s.BanUser(objectID, "Auto-moderation: Multiple reports", nil)
+	case "temporary_ban":
+		banExpiry := time.Now().Add(banDuration)
+		s.BanUser(objectID, "Auto-moderation: Multiple reports", &banExpiry)
+	case "warning":
+		// Log warning - could implement warning system later
+		logger.LogUserAction(userID, "auto_moderation_warning", map[string]interface{}{
+			"reason":       "Multiple reports",
+			"report_count": reportCount,
+			"category":     category,
+		})
+	}
+
+	// Log auto-moderation action
+	logger.LogSystemAction("auto_moderation_triggered", map[string]interface{}{
+		"user_id":      userID,
+		"action":       action,
+		"report_count": reportCount,
+		"category":     category,
+	})
+}
+
+// ================================
+// Feedback Management
+// ================================
+
+// CreateFeedback creates a new user feedback
+func (s *UserService) CreateFeedback(feedback map[string]interface{}) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Set default values
+	feedback["status"] = "new"
+	feedback["created_at"] = time.Now()
+	feedback["updated_at"] = time.Now()
+
+	// Validate required fields
+	if feedback["user_id"] == nil || feedback["type"] == nil || feedback["message"] == nil {
+		return "", fmt.Errorf("missing required fields: user_id, type, and message are required")
+	}
+
+	// Insert feedback
+	result, err := s.feedbackCollection.InsertOne(ctx, feedback)
+	if err != nil {
+		logger.LogError(err, "Failed to create feedback", map[string]interface{}{
+			"user_id": feedback["user_id"],
+			"type":    feedback["type"],
+		})
+		return "", fmt.Errorf("failed to create feedback: %w", err)
+	}
+
+	feedbackID := result.InsertedID.(primitive.ObjectID).Hex()
+
+	// Log feedback creation
+	if userID, ok := feedback["user_id"].(string); ok {
+		if objID, err := primitive.ObjectIDFromHex(userID); err == nil {
+			s.logUserActivity(objID, "feedback_submitted", map[string]interface{}{
+				"feedback_id": feedbackID,
+				"type":        feedback["type"],
+				"category":    feedback["category"],
+			}, "", "")
+
+			logger.LogUserAction(userID, "feedback_submitted", map[string]interface{}{
+				"feedback_id": feedbackID,
+				"type":        feedback["type"],
+			})
+		} else {
+			logger.LogError(err, "Invalid user_id in feedback", map[string]interface{}{
+				"user_id": userID,
+			})
+		}
+	}
+
+	return feedbackID, nil
+}
+
+// ================================
+// User Statistics
+// ================================
+
+// GetUserStatistics retrieves comprehensive user statistics
+func (s *UserService) GetUserStatistics() (*models.UserStats, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	stats := &models.UserStats{}
+
+	// Total users (guests + registered)
+	guestCount, err := s.userCollection.CountDocuments(ctx, bson.M{})
+	if err != nil {
+		logger.LogError(err, "Failed to count guest users", nil)
+	}
+
+	registeredCount, err := s.db.Collection("registered_users").CountDocuments(ctx, bson.M{})
+	if err != nil {
+		logger.LogError(err, "Failed to count registered users", nil)
+	}
+
+	stats.TotalUsers = guestCount + registeredCount
+
+	// Online users
+	onlineGuests, err := s.userCollection.CountDocuments(ctx, bson.M{"is_online": true})
+	if err != nil {
+		logger.LogError(err, "Failed to count online guest users", nil)
+	}
+
+	// For registered users, we'd need to track their online status
+	// This is a simplified implementation
+	stats.OnlineUsers = onlineGuests
+
+	// Banned users
+	bannedGuests, err := s.userCollection.CountDocuments(ctx, bson.M{"is_banned": true})
+	if err != nil {
+		logger.LogError(err, "Failed to count banned guest users", nil)
+	}
+
+	bannedRegistered, err := s.db.Collection("registered_users").CountDocuments(ctx, bson.M{"is_banned": true})
+	if err != nil {
+		logger.LogError(err, "Failed to count banned registered users", nil)
+	}
+
+	stats.BannedUsers = bannedGuests + bannedRegistered
+
+	// Active chats
+	activeChats, err := s.db.Collection("chats").CountDocuments(ctx, bson.M{"status": "active"})
+	if err != nil {
+		logger.LogError(err, "Failed to count active chats", nil)
+	}
+
+	stats.ActiveChats = activeChats
+
+	return stats, nil
+}
+
+// ================================
+// Password & Authentication
+// ================================
+
+// VerifyUserPassword verifies a user's password
+func (s *UserService) VerifyUserPassword(userID primitive.ObjectID, password string) (bool, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// This applies to registered users only
+	var user struct {
+		Password string `bson:"password"`
+	}
+
+	err := s.db.Collection("registered_users").FindOne(ctx, bson.M{"_id": userID}).Decode(&user)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return false, fmt.Errorf("user not found")
+		}
+		logger.LogError(err, "Failed to get user password", map[string]interface{}{
+			"user_id": userID.Hex(),
+		})
+		return false, fmt.Errorf("failed to verify password: %w", err)
+	}
+
+	// Use your password verification utility
+	isValid := utils.CheckPassword(password, user.Password)
+
+	// Log password verification attempt
+	s.logUserActivity(userID, "password_verification", map[string]interface{}{
+		"success": isValid,
+	}, "", "")
+
+	return isValid, nil
+}
+
+// ================================
+// Account Management
+// ================================
+
+// DeactivateAccount deactivates a user account
+func (s *UserService) DeactivateAccount(userID primitive.ObjectID, reason string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Start transaction for atomic operation
+	session, err := s.db.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) {
+		// Update user status to inactive
+		updateData := bson.M{
+			"$set": bson.M{
+				"is_active":           false,
+				"deactivated_at":      time.Now(),
+				"deactivated_by":      userID, // self-deactivation
+				"deactivation_reason": reason,
+				"updated_at":          time.Now(),
+			},
+		}
+
+		// Try registered users first
+		result, err := s.db.Collection("registered_users").UpdateOne(sc, bson.M{"_id": userID}, updateData)
+		if err != nil {
+			return nil, err
+		}
+
+		if result.MatchedCount == 0 {
+			// Try guest users (though deactivation is less common for guests)
+			result, err = s.userCollection.UpdateOne(sc, bson.M{"_id": userID}, updateData)
+			if err != nil {
+				return nil, err
+			}
+			if result.MatchedCount == 0 {
+				return nil, fmt.Errorf("user not found")
+			}
+		}
+
+		// Log deactivation
+		s.logUserActivity(userID, "account_deactivated", map[string]interface{}{
+			"reason": reason,
+		}, "", "")
+
+		return nil, nil
+	})
+
+	if err != nil {
+		logger.LogError(err, "Failed to deactivate account", map[string]interface{}{
+			"user_id": userID.Hex(),
+			"reason":  reason,
+		})
+		return fmt.Errorf("failed to deactivate account: %w", err)
+	}
+
+	logger.LogUserAction(userID.Hex(), "account_deactivated", map[string]interface{}{
+		"reason": reason,
+	})
+
+	return nil
+}
+
+// DeleteAccount permanently deletes a user account and all associated data
+func (s *UserService) DeleteAccount(userID primitive.ObjectID, reason string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Start transaction for atomic operation
+	session, err := s.db.Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) {
+		// Log deletion before actually deleting
+		s.logUserActivity(userID, "account_deletion_initiated", map[string]interface{}{
+			"reason": reason,
+		}, "", "")
+
+		// Delete user from registered_users collection
+		registeredResult, err := s.db.Collection("registered_users").DeleteOne(sc, bson.M{"_id": userID})
+		if err != nil {
+			return nil, fmt.Errorf("failed to delete registered user: %w", err)
+		}
+
+		// Delete user from guest users collection if not found in registered
+		if registeredResult.DeletedCount == 0 {
+			guestResult, err := s.userCollection.DeleteOne(sc, bson.M{"_id": userID})
+			if err != nil {
+				return nil, fmt.Errorf("failed to delete guest user: %w", err)
+			}
+			if guestResult.DeletedCount == 0 {
+				return nil, fmt.Errorf("user not found")
+			}
+		}
+
+		// Delete associated data
+		collections := []string{
+			"user_profiles",
+			"user_settings",
+			"user_activity",
+			"user_chat_history",
+			"session_tokens",
+			"refresh_tokens",
+		}
+
+		for _, collectionName := range collections {
+			_, err := s.db.Collection(collectionName).DeleteMany(sc, bson.M{"user_id": userID})
+			if err != nil {
+				logger.LogError(err, "Failed to delete user data from collection", map[string]interface{}{
+					"collection": collectionName,
+					"user_id":    userID.Hex(),
+				})
+				// Continue with other collections even if one fails
+			}
+		}
+
+		// Update reports to anonymize the deleted user
+		_, err = s.db.Collection("reports").UpdateMany(sc,
+			bson.M{"reported_user_id": userID.Hex()},
+			bson.M{"$set": bson.M{
+				"reported_user_id": "deleted_user",
+				"updated_at":       time.Now(),
+			}},
+		)
+		if err != nil {
+			logger.LogError(err, "Failed to anonymize reports", map[string]interface{}{
+				"user_id": userID.Hex(),
+			})
+		}
+
+		// Update chats to mark them as having a deleted user
+		_, err = s.db.Collection("chats").UpdateMany(sc,
+			bson.M{
+				"$or": []bson.M{
+					{"user1_id": userID},
+					{"user2_id": userID},
+				},
+			},
+			bson.M{"$set": bson.M{
+				"has_deleted_user": true,
+				"updated_at":       time.Now(),
+			}},
+		)
+		if err != nil {
+			logger.LogError(err, "Failed to update chats with deleted user", map[string]interface{}{
+				"user_id": userID.Hex(),
+			})
+		}
+
+		return nil, nil
+	})
+
+	if err != nil {
+		logger.LogError(err, "Failed to delete account", map[string]interface{}{
+			"user_id": userID.Hex(),
+			"reason":  reason,
+		})
+		return fmt.Errorf("failed to delete account: %w", err)
+	}
+
+	// Log successful deletion (this will be in admin logs since user is deleted)
+	logger.LogSystemAction("account_deleted", map[string]interface{}{
+		"user_id": userID.Hex(),
+		"reason":  reason,
+	})
+
+	return nil
+}
+
+// ================================
+// Helper Methods
+// ================================
+

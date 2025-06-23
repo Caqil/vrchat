@@ -52,7 +52,7 @@ func SetupRoutes(router *gin.Engine, hub *websocket.Hub) {
 			// App information
 			public.GET("/info", handlers.GetAppInfo)
 			public.GET("/regions", handlers.GetAvailableRegions)
-			public.GET("/languages", handlers.GetSupportedLanguages)
+			//public.GET("/languages", handlers.GetSupportedLanguages)
 
 			// Guest user creation
 			public.POST("/guest", userHandler.CreateGuest)

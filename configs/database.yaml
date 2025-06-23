@@ -1,0 +1,416 @@
+# ==============================================
+# Database Configuration for Omegle Clone
+# MongoDB Setup with Multi-Environment Support
+# ==============================================
+
+database:
+  # Primary database configuration
+  mongodb:
+    # Connection settings
+    connection:
+      uri: "${MONGODB_URI:-mongodb://localhost:27017}"
+      database: "${MONGODB_DATABASE:-omegle_app}"
+      auth_source: "${MONGODB_AUTH_SOURCE:-admin}"
+      username: "${MONGODB_USERNAME:-}"
+      password: "${MONGODB_PASSWORD:-}"
+
+    # Connection pool settings
+    pool:
+      max_pool_size: 100
+      min_pool_size: 5
+      max_idle_time: "30m"
+      connect_timeout: "10s"
+      server_selection_timeout: "5s"
+      heartbeat_interval: "10s"
+      socket_timeout: "30s"
+
+    # Advanced options
+    options:
+      retry_writes: true
+      retry_reads: true
+      read_preference: "primary"
+      write_concern:
+        w: "majority"
+        j: true
+        wtimeout: "10s"
+      read_concern:
+        level: "majority"
+
+    # SSL/TLS configuration
+    ssl:
+      enabled: "${MONGODB_SSL_ENABLED:-false}"
+      ca_file: "${MONGODB_SSL_CA_FILE:-}"
+      cert_file: "${MONGODB_SSL_CERT_FILE:-}"
+      key_file: "${MONGODB_SSL_KEY_FILE:-}"
+      insecure_skip_verify: "${MONGODB_SSL_SKIP_VERIFY:-false}"
+
+  # Collections configuration
+  collections:
+    # Core user management
+    users:
+      indexes:
+        - name: "idx_session_id"
+          keys: { session_id: 1 }
+          options: { unique: true, sparse: true }
+        - name: "idx_ip_address"
+          keys: { ip_address: 1 }
+        - name: "idx_online_status"
+          keys: { is_online: 1 }
+        - name: "idx_region"
+          keys: { region: 1 }
+        - name: "idx_language"
+          keys: { language: 1 }
+        - name: "idx_interests"
+          keys: { interests: 1 }
+        - name: "idx_created_at"
+          keys: { created_at: 1 }
+        - name: "idx_last_seen"
+          keys: { last_seen: 1 }
+        - name: "idx_ban_status"
+          keys: { is_banned: 1 }
+        - name: "idx_user_compound"
+          keys: { region: 1, language: 1, is_online: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["session_id", "ip_address", "region"]
+              properties:
+                session_id:
+                  bsonType: "string"
+                  minLength: 10
+                ip_address:
+                  bsonType: "string"
+                region:
+                  enum:
+                    [
+                      "us-east",
+                      "us-west",
+                      "eu-west",
+                      "ap-southeast",
+                      "ap-northeast",
+                    ]
+
+    # Chat management
+    chats:
+      indexes:
+        - name: "idx_room_id"
+          keys: { room_id: 1 }
+          options: { unique: true }
+        - name: "idx_user1"
+          keys: { user1_id: 1 }
+        - name: "idx_user2"
+          keys: { user2_id: 1 }
+        - name: "idx_status"
+          keys: { status: 1 }
+        - name: "idx_chat_type"
+          keys: { chat_type: 1 }
+        - name: "idx_started_at"
+          keys: { started_at: 1 }
+        - name: "idx_ended_at"
+          keys: { ended_at: 1 }
+        - name: "idx_users_compound"
+          keys: { user1_id: 1, user2_id: 1 }
+        - name: "idx_active_chats"
+          keys: { status: 1, started_at: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["room_id", "user1_id", "user2_id", "status"]
+              properties:
+                status:
+                  enum: ["active", "ended", "abandoned"]
+                chat_type:
+                  enum: ["text", "video", "audio"]
+
+    # Session management
+    session_tokens:
+      indexes:
+        - name: "idx_token"
+          keys: { token: 1 }
+          options: { unique: true }
+        - name: "idx_user_id"
+          keys: { user_id: 1 }
+        - name: "idx_expires_at"
+          keys: { expires_at: 1 }
+          options: { expireAfterSeconds: 0 }
+        - name: "idx_active_status"
+          keys: { is_active: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["token", "user_id", "expires_at"]
+
+    # Refresh tokens
+    refresh_tokens:
+      indexes:
+        - name: "idx_refresh_token"
+          keys: { token: 1 }
+          options: { unique: true }
+        - name: "idx_refresh_user_id"
+          keys: { user_id: 1 }
+        - name: "idx_refresh_expires_at"
+          keys: { expires_at: 1 }
+          options: { expireAfterSeconds: 0 }
+
+    # COTURN server management
+    coturn_servers:
+      indexes:
+        - name: "idx_coturn_region"
+          keys: { region: 1 }
+        - name: "idx_coturn_active"
+          keys: { is_active: 1 }
+        - name: "idx_coturn_status"
+          keys: { status: 1 }
+        - name: "idx_coturn_priority"
+          keys: { priority: 1 }
+        - name: "idx_coturn_compound"
+          keys: { region: 1, is_active: 1, priority: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["name", "region", "url", "username", "password"]
+              properties:
+                region:
+                  enum:
+                    [
+                      "us-east",
+                      "us-west",
+                      "eu-west",
+                      "ap-southeast",
+                      "ap-northeast",
+                    ]
+                status:
+                  enum: ["online", "offline", "maintenance", "error"]
+
+    # User reports and moderation
+    reports:
+      indexes:
+        - name: "idx_reporter_id"
+          keys: { reporter_id: 1 }
+        - name: "idx_reported_user_id"
+          keys: { reported_user_id: 1 }
+        - name: "idx_chat_id"
+          keys: { chat_id: 1 }
+        - name: "idx_report_status"
+          keys: { status: 1 }
+        - name: "idx_report_created_at"
+          keys: { created_at: 1 }
+        - name: "idx_pending_reports"
+          keys: { status: 1, created_at: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["reporter_id", "reported_user_id", "reason", "status"]
+              properties:
+                status:
+                  enum: ["pending", "reviewed", "resolved", "dismissed"]
+                reason:
+                  enum:
+                    ["spam", "harassment", "inappropriate", "underage", "other"]
+
+    # IP geolocation cache
+    ip_cache:
+      indexes:
+        - name: "idx_ip_unique"
+          keys: { ip: 1 }
+          options: { unique: true }
+        - name: "idx_ip_ttl"
+          keys: { created_at: 1 }
+          options: { expireAfterSeconds: 86400 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["ip", "region_info", "created_at"]
+
+    # Admin activity logs
+    admin_activity_logs:
+      indexes:
+        - name: "idx_admin_id"
+          keys: { admin_id: 1 }
+        - name: "idx_admin_timestamp"
+          keys: { timestamp: 1 }
+        - name: "idx_admin_method"
+          keys: { method: 1 }
+        - name: "idx_admin_endpoint"
+          keys: { endpoint: 1 }
+        - name: "idx_admin_compound"
+          keys: { admin_id: 1, timestamp: -1 }
+
+    # Application settings
+    app_settings:
+      indexes:
+        - name: "idx_settings_updated_at"
+          keys: { updated_at: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["app_name", "version"]
+
+    # User settings
+    user_settings:
+      indexes:
+        - name: "idx_user_settings_user_id"
+          keys: { user_id: 1 }
+          options: { unique: true }
+        - name: "idx_user_settings_updated_at"
+          keys: { updated_at: 1 }
+
+    # Blocked users
+    blocked_users:
+      indexes:
+        - name: "idx_blocked_user_id"
+          keys: { user_id: 1 }
+        - name: "idx_blocked_target"
+          keys: { blocked_user_id: 1 }
+        - name: "idx_blocked_compound"
+          keys: { user_id: 1, blocked_user_id: 1 }
+          options: { unique: true }
+        - name: "idx_blocked_expires"
+          keys: { expires_at: 1 }
+          options: { expireAfterSeconds: 0, sparse: true }
+
+    # Message history (if enabled)
+    messages:
+      indexes:
+        - name: "idx_message_chat_id"
+          keys: { chat_id: 1 }
+        - name: "idx_message_sender"
+          keys: { sender_id: 1 }
+        - name: "idx_message_timestamp"
+          keys: { timestamp: 1 }
+        - name: "idx_message_compound"
+          keys: { chat_id: 1, timestamp: 1 }
+      options:
+        validation:
+          validator:
+            $jsonSchema:
+              bsonType: "object"
+              required: ["chat_id", "sender_id", "content", "timestamp"]
+
+  # Backup and maintenance
+  maintenance:
+    # Automatic cleanup settings
+    cleanup:
+      enabled: true
+      schedule: "0 2 * * *" # Daily at 2 AM
+      retention:
+        expired_tokens: "1d"
+        inactive_users: "30d"
+        ended_chats: "7d"
+        old_reports: "90d"
+        ip_cache: "1d"
+        admin_logs: "180d"
+
+    # Backup settings
+    backup:
+      enabled: true
+      schedule: "0 3 * * 0" # Weekly on Sunday at 3 AM
+      retention_days: 30
+      collections:
+        - "users"
+        - "chats"
+        - "reports"
+        - "app_settings"
+        - "coturn_servers"
+      exclude_collections:
+        - "session_tokens"
+        - "refresh_tokens"
+        - "ip_cache"
+
+    # Index maintenance
+    index_optimization:
+      enabled: true
+      schedule: "0 4 * * 1" # Weekly on Monday at 4 AM
+      reindex_threshold: 1000000 # Documents count threshold
+
+  # Performance monitoring
+  monitoring:
+    # Connection monitoring
+    connection_monitoring:
+      enabled: true
+      check_interval: "30s"
+      alert_thresholds:
+        max_connections: 80
+        connection_pool_exhausted: 5
+        slow_queries: "1s"
+
+    # Query performance
+    query_monitoring:
+      enabled: true
+      slow_query_threshold: "1000ms"
+      log_slow_queries: true
+      profile_level: 1 # Log slow operations
+
+    # Metrics collection
+    metrics:
+      enabled: true
+      collection_interval: "1m"
+      retention_period: "7d"
+
+# Environment-specific overrides
+environments:
+  development:
+    mongodb:
+      connection:
+        uri: "mongodb://localhost:27017"
+        database: "omegle_dev"
+      pool:
+        max_pool_size: 20
+        min_pool_size: 2
+    monitoring:
+      query_monitoring:
+        profile_level: 2 # More detailed profiling in development
+    maintenance:
+      cleanup:
+        retention:
+          expired_tokens: "1h"
+          inactive_users: "1d"
+          ended_chats: "1h"
+
+  staging:
+    mongodb:
+      connection:
+        database: "omegle_staging"
+      pool:
+        max_pool_size: 50
+        min_pool_size: 5
+    maintenance:
+      cleanup:
+        retention:
+          expired_tokens: "6h"
+          inactive_users: "7d"
+          ended_chats: "2d"
+
+  production:
+    mongodb:
+      connection:
+        database: "omegle_production"
+      pool:
+        max_pool_size: 100
+        min_pool_size: 10
+      ssl:
+        enabled: true
+    monitoring:
+      connection_monitoring:
+        alert_thresholds:
+          max_connections: 90
+          connection_pool_exhausted: 3
+          slow_queries: "500ms"
+    maintenance:
+      backup:
+        enabled: true
+        retention_days: 90

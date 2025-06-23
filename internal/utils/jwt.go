@@ -52,7 +52,7 @@ func GenerateUserJWT(userID, username, role string) (string, error) {
 		StandardClaims: jwt.StandardClaims{
 			Issuer:    "omegle-backend",
 			Subject:   userID,
-			ExpiresAt: time.Now().Add(time.Hour * time.Duration(cfg.JWT.ExpiryHour)).Unix(),
+			ExpiresAt: time.Now().Add(time.Hour * time.Duration(cfg.Security.JWT.ExpiryHour)).Unix(),
 			NotBefore: time.Now().Unix(),
 			IssuedAt:  time.Now().Unix(),
 			Audience:  "omegle-app",
@@ -60,7 +60,7 @@ func GenerateUserJWT(userID, username, role string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(cfg.JWT.Secret))
+	return token.SignedString([]byte(cfg.Security.JWT.Secret))
 }
 
 // GenerateAdminJWT generates a JWT token for admin users
@@ -83,7 +83,7 @@ func GenerateAdminJWT(adminID, username, role string, permissions []string) (str
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(cfg.JWT.Secret + "_admin"))
+	return token.SignedString([]byte(cfg.Security.JWT.Secret + "_admin"))
 }
 
 // ValidateUserJWT validates a user JWT token
@@ -91,7 +91,7 @@ func ValidateUserJWT(tokenString string) (*UserClaims, error) {
 	cfg := config.Load()
 
 	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(cfg.JWT.Secret), nil
+		return []byte(cfg.Security.JWT.Secret), nil
 	})
 
 	if err != nil {
@@ -111,7 +111,7 @@ func ValidateAdminJWT(tokenString string) (*AdminClaims, error) {
 	cfg := config.Load()
 
 	token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
-		return []byte(cfg.JWT.Secret + "_admin"), nil
+		return []byte(cfg.Security.JWT.Secret + "_admin"), nil
 	})
 
 	if err != nil {

@@ -40,7 +40,7 @@ func AdminAuth() gin.HandlerFunc {
 		// Parse admin JWT token
 		token, err := jwt.ParseWithClaims(tokenString, &AdminClaims{}, func(token *jwt.Token) (interface{}, error) {
 			// Use different secret for admin tokens
-			return []byte(config.Load().JWT.Secret + "_admin"), nil
+			return []byte(config.Load().Security.JWT.Secret + "_admin"), nil
 		})
 
 		if err != nil {

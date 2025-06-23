@@ -103,7 +103,7 @@ func (h *UserHandler) CreateGuest(c *gin.Context) {
 	}
 
 	// Save guest user
-	userID, err := h.userService.CreateGuestUser(guest)
+	userID, err := h.userService.CreateGuestUser(language, region, userAgent, guestData.Interests, ipAddress)
 	if err != nil {
 		logger.LogError(err, "Failed to create guest user", map[string]interface{}{
 			"ip_address": ipAddress,
@@ -114,9 +114,9 @@ func (h *UserHandler) CreateGuest(c *gin.Context) {
 	}
 
 	// Generate session token
-	sessionToken := utils.GenerateSessionToken(userID)
+	sessionToken := utils.GenerateSessionToken(userID.Hex())
 
-	logger.LogUserAction(userID, "guest_user_created", map[string]interface{}{
+	logger.LogUserAction(userID.Hex(), "guest_user_created", map[string]interface{}{
 		"ip_address": ipAddress,
 		"region":     region,
 		"language":   language,
@@ -241,7 +241,7 @@ func (h *UserHandler) UpdateProfile(c *gin.Context) {
 
 	// Check if username is already taken
 	if updateData.Username != "" {
-		exists, err := h.userService.CheckUsernameExists(updateData.Username, userID)
+		exists, err := h.userService.CheckUsernameExists(updateData.Username)
 		if err != nil {
 			utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to check username availability")
 			return
@@ -626,9 +626,9 @@ func (h *UserHandler) SubmitFeedback(c *gin.Context) {
 // User Statistics
 
 func (h *UserHandler) GetUserStats(c *gin.Context) {
-	userID := c.GetString("user_id")
+	c.GetString("user_id")
 
-	stats, err := h.userService.GetUserStatistics(userID)
+	stats, err := h.userService.GetUserStatistics()
 	if err != nil {
 		utils.ErrorResponse(c, http.StatusInternalServerError, "Failed to get user statistics")
 		return

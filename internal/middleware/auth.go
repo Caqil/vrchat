@@ -104,7 +104,7 @@ func JWTAuth() gin.HandlerFunc {
 
 		// Parse and validate JWT token
 		token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
-			return []byte(config.Load().JWT.Secret), nil
+			return []byte(config.Load().Security.JWT.Secret), nil
 		})
 
 		if err != nil {
