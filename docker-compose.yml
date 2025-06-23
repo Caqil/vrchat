@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGODB_URI=mongodb://mongo:27017
+      - MONGODB_DATABASE=omegle_app
+    depends_on:
+      - mongo
+      - redis
+    volumes:
+      - ./logs:/app/logs
+
+  mongo:
+    image: mongo:6.0
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - "6379:6379"
+
+  coturn:
+    image: coturn/coturn:latest
+    restart: always
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "49152-65535:49152-65535/udp"
+    environment:
+      - TURN_USERNAME=myuser
+      - TURN_PASSWORD=mypassword
+      - TURN_REALM=example.com
+    volumes:
+      - ./coturn.conf:/etc/coturn/turnserver.conf
+
+volumes:
+  mongo_data:
