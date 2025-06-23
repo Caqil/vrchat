@@ -7,8 +7,7 @@
     
     <!-- External Dependencies -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
     
     <!-- Local Styles -->
     <link href="/admin/assets/css/admin.css" rel="stylesheet">
@@ -128,140 +127,72 @@
             <!-- Header -->
             <header class="header">
                 <div class="header-left">
-                    <button class="sidebar-toggle" id="sidebarToggle">
+                    <button class="btn btn-outline-secondary" id="sidebarToggle">
                         <i class="fas fa-bars"></i>
                     </button>
-                    <h1 class="page-title" id="pageTitle">Dashboard</h1>
+                    <h1 class="header-title">Admin Dashboard</h1>
                 </div>
-                
                 <div class="header-right">
-                    <div class="header-stats" id="headerStats">
-                        <div class="header-stat">
-                            <div class="header-stat-label">Online Users</div>
-                            <div class="header-stat-value" id="onlineUsers">-</div>
-                        </div>
-                        <div class="header-stat">
-                            <div class="header-stat-label">Active Chats</div>
-                            <div class="header-stat-value" id="activeChats">-</div>
-                        </div>
-                        <div class="header-stat">
-                            <div class="header-stat-label">Total Users</div>
-                            <div class="header-stat-value" id="totalUsers">-</div>
-                        </div>
-                    </div>
-                    
-                    <div class="admin-profile" onclick="showAdminMenu()">
-                        <div class="admin-avatar">A</div>
-                        <div class="admin-info">
-                            <div class="admin-name">Admin</div>
-                            <div class="admin-role">Administrator</div>
-                        </div>
-                        <i class="fas fa-chevron-down"></i>
-                    </div>
+                    <button class="btn btn-outline-secondary" onclick="showAdminMenu()">
+                        <i class="fas fa-user-circle"></i>
+                        Admin
+                    </button>
                 </div>
             </header>
 
-            <!-- Content Sections -->
+            <!-- Content Area -->
             <div class="content">
                 <!-- Dashboard Section -->
-                <section class="content-section active" id="dashboard">
+                <div class="section-content" id="dashboardSection" style="display: block;">
                     <div class="stats-grid">
-                        <div class="stat-card">
+                        <div class="stat-card primary">
                             <div class="stat-icon">
                                 <i class="fas fa-users"></i>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value" id="dashTotalUsers">0</div>
-                                <div class="stat-label">Total Users</div>
-                                <div class="stat-change positive">
-                                    <i class="fas fa-arrow-up"></i>
-                                    <span id="userGrowth">+0%</span> from last week
-                                </div>
-                            </div>
+                            <div class="stat-value" id="totalUsers">0</div>
+                            <div class="stat-label">Total Users</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card success">
                             <div class="stat-icon">
-                                <i class="fas fa-circle text-success pulse"></i>
+                                <i class="fas fa-user-check"></i>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value" id="dashOnlineUsers">0</div>
-                                <div class="stat-label">Online Users</div>
-                                <div class="stat-change">
-                                    <span class="online-indicator pulse"></span>
-                                    Real-time data
-                                </div>
-                            </div>
+                            <div class="stat-value" id="activeUsers">0</div>
+                            <div class="stat-label">Active Users</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card info">
                             <div class="stat-icon">
                                 <i class="fas fa-comments"></i>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value" id="dashActiveChats">0</div>
-                                <div class="stat-label">Active Chats</div>
-                                <div class="stat-change">
-                                    <span class="online-indicator pulse"></span>
-                                    Live conversations
-                                </div>
-                            </div>
+                            <div class="stat-value" id="totalChats">0</div>
+                            <div class="stat-label">Total Chats</div>
                         </div>
-                        <div class="stat-card">
+                        <div class="stat-card warning">
                             <div class="stat-icon">
-                                <i class="fas fa-chart-line"></i>
+                                <i class="fas fa-comment-dots"></i>
                             </div>
-                            <div class="stat-content">
-                                <div class="stat-value" id="dashTotalChats">0</div>
-                                <div class="stat-label">Total Chats Today</div>
-                                <div class="stat-change positive">
-                                    <i class="fas fa-arrow-up"></i>
-                                    <span id="chatGrowth">+0%</span> from yesterday
-                                </div>
-                            </div>
+                            <div class="stat-value" id="activeChats">0</div>
+                            <div class="stat-label">Active Chats</div>
                         </div>
                     </div>
 
-                    <div class="dashboard-grid">
-                        <div class="card dashboard-chart">
+                    <div class="grid-2">
+                        <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
                                     <i class="fas fa-chart-area"></i>
-                                    User Activity
-                                </div>
-                                <select id="chartPeriod" class="form-control" style="width: auto;">
-                                    <option value="7">Last 7 days</option>
-                                    <option value="30">Last 30 days</option>
-                                    <option value="90">Last 90 days</option>
-                                </select>
-                            </div>
-                            <div class="card-body">
-                                <canvas id="userActivityChart"></canvas>
-                            </div>
-                        </div>
-
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <i class="fas fa-globe-americas"></i>
-                                    Regional Distribution
+                                    Real-time Statistics
                                 </div>
                             </div>
                             <div class="card-body">
-                                <canvas id="regionChart"></canvas>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="dashboard-grid">
-                        <div class="card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <i class="fas fa-clock"></i>
-                                    Recent Activities
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div id="recentActivities" class="activity-list">
-                                    <!-- Activities will be loaded here -->
+                                <div class="stats-grid">
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="usersOnline">0</div>
+                                        <div class="stat-label">Users Online</div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="queueLength">0</div>
+                                        <div class="stat-label">Queue Length</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -269,28 +200,35 @@
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                    System Alerts
+                                    <i class="fas fa-chart-pie"></i>
+                                    Quick Stats
                                 </div>
                             </div>
                             <div class="card-body">
-                                <div id="systemAlerts" class="alert-list">
-                                    <!-- Alerts will be loaded here -->
+                                <div class="stats-grid">
+                                    <div class="stat-card danger">
+                                        <div class="stat-value" id="bannedUsers">0</div>
+                                        <div class="stat-label">Banned Users</div>
+                                    </div>
+                                    <div class="stat-card warning">
+                                        <div class="stat-value" id="reportsToday">0</div>
+                                        <div class="stat-label">Reports Today</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
-                <!-- User Management Section -->
-                <section class="content-section" id="users">
+                <!-- Users Section -->
+                <div class="section-content" id="usersSection">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="fas fa-users"></i>
                                 User Management
                             </div>
-                            <div class="card-actions">
+                            <div style="margin-left: auto;">
                                 <button class="btn btn-primary" onclick="exportUsers()">
                                     <i class="fas fa-download"></i>
                                     Export Users
@@ -302,37 +240,18 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            <div class="table-filters">
-                                <div class="filter-group">
-                                    <input type="text" id="userSearch" placeholder="Search users..." class="form-control">
-                                </div>
-                                <div class="filter-group">
-                                    <select id="userRegionFilter" class="form-control">
-                                        <option value="">All Regions</option>
-                                    </select>
-                                </div>
-                                <div class="filter-group">
-                                    <select id="userStatusFilter" class="form-control">
-                                        <option value="">All Status</option>
-                                        <option value="online">Online</option>
-                                        <option value="offline">Offline</option>
-                                        <option value="banned">Banned</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
                             <div class="table-responsive">
-                                <table class="table" id="usersTable">
+                                <table class="table">
                                     <thead>
                                         <tr>
-                                            <th><input type="checkbox" id="selectAllUsers"></th>
-                                            <th>User ID</th>
-                                            <th>Session</th>
-                                            <th>Region</th>
-                                            <th>Language</th>
+                                            <th>
+                                                <input type="checkbox" id="selectAllUsers">
+                                            </th>
+                                            <th>User</th>
                                             <th>Status</th>
+                                            <th>Region</th>
                                             <th>Created</th>
-                                            <th>Last Seen</th>
+                                            <th>Last Active</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -341,60 +260,40 @@
                                     </tbody>
                                 </table>
                             </div>
-                            
-                            <div class="table-pagination" id="usersPagination">
+                            <div class="pagination" id="usersPagination">
                                 <!-- Pagination will be loaded here -->
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
-                <!-- Chat Monitoring Section -->
-                <section class="content-section" id="chats">
+                <!-- Chats Section -->
+                <div class="section-content" id="chatsSection">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="fas fa-comments"></i>
                                 Chat Monitoring
                             </div>
-                            <div class="card-actions">
-                                <button class="btn btn-info" onclick="refreshChats()">
-                                    <i class="fas fa-sync"></i>
+                            <div style="margin-left: auto;">
+                                <button class="btn btn-primary" onclick="refreshChats()">
+                                    <i class="fas fa-refresh"></i>
                                     Refresh
                                 </button>
                             </div>
                         </div>
                         <div class="card-body">
-                            <div class="table-filters">
-                                <div class="filter-group">
-                                    <select id="chatStatusFilter" class="form-control">
-                                        <option value="">All Chats</option>
-                                        <option value="active">Active</option>
-                                        <option value="ended">Ended</option>
-                                        <option value="reported">Reported</option>
-                                    </select>
-                                </div>
-                                <div class="filter-group">
-                                    <select id="chatTypeFilter" class="form-control">
-                                        <option value="">All Types</option>
-                                        <option value="text">Text</option>
-                                        <option value="video">Video</option>
-                                        <option value="audio">Audio</option>
-                                    </select>
-                                </div>
-                            </div>
-                            
                             <div class="table-responsive">
-                                <table class="table" id="chatsTable">
+                                <table class="table">
                                     <thead>
                                         <tr>
-                                            <th>Room ID</th>
-                                            <th>Type</th>
-                                            <th>Users</th>
+                                            <th>Chat ID</th>
+                                            <th>Participants</th>
                                             <th>Status</th>
-                                            <th>Duration</th>
-                                            <th>Messages</th>
+                                            <th>Type</th>
+                                            <th>Region</th>
                                             <th>Started</th>
+                                            <th>Duration</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -403,12 +302,15 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <div class="pagination" id="chatsPagination">
+                                <!-- Pagination will be loaded here -->
+                            </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
-                <!-- Reports & Moderation Section -->
-                <section class="content-section" id="reports">
+                <!-- Reports Section -->
+                <div class="section-content" id="reportsSection">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
@@ -418,7 +320,7 @@
                         </div>
                         <div class="card-body">
                             <div class="table-responsive">
-                                <table class="table" id="reportsTable">
+                                <table class="table">
                                     <thead>
                                         <tr>
                                             <th>Report ID</th>
@@ -426,7 +328,7 @@
                                             <th>Reported User</th>
                                             <th>Reason</th>
                                             <th>Status</th>
-                                            <th>Created</th>
+                                            <th>Date</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
@@ -435,26 +337,34 @@
                                     </tbody>
                                 </table>
                             </div>
+                            <div class="pagination" id="reportsPagination">
+                                <!-- Pagination will be loaded here -->
+                            </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- Content Management Section -->
-                <section class="content-section" id="content">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div class="section-content" id="contentSection">
+                    <div class="grid-2">
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
                                     <i class="fas fa-ban"></i>
                                     Banned Words
                                 </div>
-                                <button class="btn btn-primary btn-sm" onclick="addBannedWord()">
-                                    <i class="fas fa-plus"></i>
-                                    Add Word
-                                </button>
                             </div>
                             <div class="card-body">
-                                <div id="bannedWordsList" class="word-list">
+                                <div class="form-group">
+                                    <div style="display: flex; gap: 10px;">
+                                        <input type="text" id="newBannedWord" class="form-control" placeholder="Enter word to ban">
+                                        <button class="btn btn-danger" onclick="addBannedWord()">
+                                            <i class="fas fa-plus"></i>
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="bannedWordsList">
                                     <!-- Banned words will be loaded here -->
                                 </div>
                             </div>
@@ -463,84 +373,103 @@
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
-                                    <i class="fas fa-globe"></i>
+                                    <i class="fas fa-globe-americas"></i>
                                     Banned Countries
                                 </div>
-                                <button class="btn btn-primary btn-sm" onclick="addBannedCountry()">
-                                    <i class="fas fa-plus"></i>
-                                    Add Country
-                                </button>
                             </div>
                             <div class="card-body">
-                                <div id="bannedCountriesList" class="country-list">
+                                <div class="form-group">
+                                    <div style="display: flex; gap: 10px;">
+                                        <input type="text" id="newBannedCountry" class="form-control" placeholder="Enter country code (e.g., US)">
+                                        <button class="btn btn-danger" onclick="addBannedCountry()">
+                                            <i class="fas fa-plus"></i>
+                                            Add
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="bannedCountriesList">
                                     <!-- Banned countries will be loaded here -->
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- Analytics Section -->
-                <section class="content-section" id="analytics">
+                <div class="section-content" id="analyticsSection">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="fas fa-chart-line"></i>
-                                Advanced Analytics
+                                Analytics Dashboard
                             </div>
                         </div>
                         <div class="card-body">
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px;">
-                                <canvas id="chatAnalyticsChart"></canvas>
-                                <canvas id="userGrowthChart"></canvas>
-                            </div>
-                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
-                                <canvas id="regionDistributionChart"></canvas>
-                                <canvas id="languageChart"></canvas>
-                            </div>
+                            <p>Analytics features will be implemented here.</p>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- COTURN Servers Section -->
-                <section class="content-section" id="coturn">
+                <div class="section-content" id="coturnSection">
                     <div class="card">
                         <div class="card-header">
                             <div class="card-title">
                                 <i class="fas fa-server"></i>
                                 COTURN Servers
                             </div>
-                            <button class="btn btn-primary" onclick="addCoturnServer()">
-                                <i class="fas fa-plus"></i>
-                                Add Server
-                            </button>
+                            <div style="margin-left: auto;">
+                                <button class="btn btn-primary" onclick="addCoturnServer()">
+                                    <i class="fas fa-plus"></i>
+                                    Add Server
+                                </button>
+                            </div>
                         </div>
                         <div class="card-body">
+                            <div class="grid-2 mb-30">
+                                <div class="form-group">
+                                    <label class="form-label">Server URL</label>
+                                    <input type="text" id="coturnUrl" class="form-control" placeholder="turn:server.example.com:3478">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Region</label>
+                                    <input type="text" id="coturnRegion" class="form-control" placeholder="us-east-1">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Username</label>
+                                    <input type="text" id="coturnUsername" class="form-control" placeholder="username">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Password</label>
+                                    <input type="password" id="coturnPassword" class="form-control" placeholder="password">
+                                </div>
+                            </div>
+
                             <div class="table-responsive">
-                                <table class="table" id="coturnTable">
+                                <table class="table">
                                     <thead>
                                         <tr>
-                                            <th>Server</th>
+                                            <th>ID</th>
+                                            <th>URL</th>
                                             <th>Region</th>
                                             <th>Status</th>
                                             <th>Load</th>
-                                            <th>Uptime</th>
                                             <th>Last Check</th>
                                             <th>Actions</th>
                                         </tr>
                                     </thead>
-                                    <tbody id="coturnTableBody">
+                                    <tbody id="coturnServersTableBody">
                                         <!-- COTURN servers will be loaded here -->
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- Settings Section -->
-                <section class="content-section" id="settings">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div class="section-content" id="settingsSection">
+                    <div class="grid-2">
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
@@ -586,27 +515,20 @@
                                     <div class="form-group">
                                         <label class="form-checkbox">
                                             <input type="checkbox" id="autoModeration">
-                                            <span class="checkmark"></span>
-                                            Auto Moderation
+                                            Enable Auto-Moderation
                                         </label>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-checkbox">
                                             <input type="checkbox" id="profanityFilter">
-                                            <span class="checkmark"></span>
-                                            Profanity Filter
+                                            Enable Profanity Filter
                                         </label>
                                     </div>
                                     <div class="form-group">
                                         <label class="form-checkbox">
-                                            <input type="checkbox" id="nsfwDetection">
-                                            <span class="checkmark"></span>
-                                            NSFW Detection
+                                            <input type="checkbox" id="ageVerification">
+                                            Require Age Verification
                                         </label>
-                                    </div>
-                                    <div class="form-group">
-                                        <label class="form-label">Auto Ban Threshold</label>
-                                        <input type="number" id="autoBanThreshold" class="form-control">
                                     </div>
                                     <button type="submit" class="btn btn-primary">
                                         <i class="fas fa-save"></i>
@@ -616,21 +538,36 @@
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
 
                 <!-- System Section -->
-                <section class="content-section" id="system">
-                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px;">
+                <div class="section-content" id="systemSection">
+                    <div class="grid-2">
                         <div class="card">
                             <div class="card-header">
                                 <div class="card-title">
-                                    <i class="fas fa-server"></i>
+                                    <i class="fas fa-info-circle"></i>
                                     System Information
                                 </div>
                             </div>
                             <div class="card-body">
-                                <div id="systemInfo" class="system-info">
-                                    <!-- System info will be loaded here -->
+                                <div class="stats-grid">
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="systemUptime">0</div>
+                                        <div class="stat-label">Uptime (hours)</div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="memoryUsage">0%</div>
+                                        <div class="stat-label">Memory Usage</div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="cpuUsage">0%</div>
+                                        <div class="stat-label">CPU Usage</div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-value" id="dbConnections">0</div>
+                                        <div class="stat-label">DB Connections</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -639,57 +576,66 @@
                             <div class="card-header">
                                 <div class="card-title">
                                     <i class="fas fa-tools"></i>
-                                    System Tools
+                                    System Actions
                                 </div>
                             </div>
                             <div class="card-body">
-                                <div class="system-tools">
-                                    <button class="btn btn-warning btn-block" onclick="clearCache()">
-                                        <i class="fas fa-broom"></i>
+                                <div style="display: flex; flex-direction: column; gap: 15px;">
+                                    <button class="btn btn-warning" onclick="clearCache()">
+                                        <i class="fas fa-trash"></i>
                                         Clear Cache
                                     </button>
-                                    <button class="btn btn-info btn-block" onclick="cleanupDatabase()">
+                                    <button class="btn btn-info" onclick="cleanupDatabase()">
                                         <i class="fas fa-database"></i>
                                         Cleanup Database
                                     </button>
-                                    <button class="btn btn-success btn-block" onclick="createBackup()">
+                                    <button class="btn btn-success" onclick="createBackup()">
                                         <i class="fas fa-download"></i>
                                         Create Backup
                                     </button>
-                                    <button class="btn btn-danger btn-block" onclick="enableMaintenanceMode()">
-                                        <i class="fas fa-wrench"></i>
-                                        Maintenance Mode
+                                    <button class="btn btn-danger" onclick="enableMaintenanceMode()">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        Enable Maintenance Mode
                                     </button>
                                 </div>
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
             </div>
         </main>
     </div>
 
-    <!-- Modals -->
-    <div class="modal" id="genericModal">
+    <!-- Bulk Actions Modal -->
+    <div class="modal" id="bulkActionsModal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 class="modal-title" id="modalTitle">Modal Title</h3>
+                <div class="modal-title">Bulk User Actions</div>
                 <button class="modal-close" onclick="closeModal()">&times;</button>
             </div>
-            <div class="modal-body" id="modalBody">
-                <!-- Dynamic content -->
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Action</label>
+                    <select id="bulkAction" class="form-control">
+                        <option value="">Select action...</option>
+                        <option value="ban">Ban Users</option>
+                        <option value="unban">Unban Users</option>
+                        <option value="delete">Delete Users</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Reason (optional)</label>
+                    <textarea id="bulkReason" class="form-control" rows="3" placeholder="Enter reason for action..."></textarea>
+                </div>
             </div>
-            <div class="modal-footer" id="modalFooter">
+            <div class="modal-footer">
                 <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+                <button class="btn btn-primary" onclick="executeBulkAction()">Execute Action</button>
             </div>
         </div>
     </div>
 
-    <!-- Notification Container -->
-    <div id="notificationContainer"></div>
-
-    <!-- Scripts -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <!-- Local Scripts -->
     <script src="/admin/assets/js/admin.js"></script>
 </body>
 </html>
