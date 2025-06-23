@@ -9,6 +9,7 @@ import (
 
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
@@ -19,12 +20,49 @@ type Config struct {
 	DatabaseName  string
 	AdminUsername string
 	AdminPassword string
+	AdminEmail    string
+	Environment   string
 }
 
 type CollectionSetup struct {
 	Name     string
 	Indexes  []mongo.IndexModel
 	SeedData interface{}
+}
+
+// AdminUser represents the admin user structure
+type AdminUser struct {
+	ID          string        `bson:"_id"`
+	Username    string        `bson:"username"`
+	Email       string        `bson:"email"`
+	Password    string        `bson:"password"`
+	Role        string        `bson:"role"`
+	Permissions []string      `bson:"permissions"`
+	IsActive    bool          `bson:"is_active"`
+	Profile     AdminProfile  `bson:"profile"`
+	Security    AdminSecurity `bson:"security"`
+	CreatedAt   time.Time     `bson:"created_at"`
+	UpdatedAt   time.Time     `bson:"updated_at"`
+	LastLogin   *time.Time    `bson:"last_login,omitempty"`
+}
+
+type AdminProfile struct {
+	FirstName   string `bson:"first_name"`
+	LastName    string `bson:"last_name"`
+	DisplayName string `bson:"display_name"`
+	Avatar      string `bson:"avatar,omitempty"`
+	Phone       string `bson:"phone,omitempty"`
+	Timezone    string `bson:"timezone"`
+}
+
+type AdminSecurity struct {
+	LastIP            string     `bson:"last_ip,omitempty"`
+	FailedAttempts    int        `bson:"failed_attempts"`
+	LockedUntil       *time.Time `bson:"locked_until,omitempty"`
+	TwoFactorEnabled  bool       `bson:"two_factor_enabled"`
+	TwoFactorSecret   string     `bson:"two_factor_secret,omitempty"`
+	PasswordChangedAt time.Time  `bson:"password_changed_at"`
+	LastActivity      time.Time  `bson:"last_activity"`
 }
 
 func main() {
@@ -50,6 +88,16 @@ func main() {
 	}
 
 	log.Println("✅ Migration completed successfully!")
+	log.Println("")
+	log.Println("🎉 Admin Panel Setup Complete!")
+	log.Println("📊 Access your admin panel at: http://localhost:8080/admin")
+	log.Println("")
+	log.Printf("👤 Default Admin Credentials:")
+	log.Printf("   Username: %s", config.AdminUsername)
+	log.Printf("   Password: %s", config.AdminPassword)
+	log.Printf("   Email: %s", config.AdminEmail)
+	log.Println("")
+	log.Println("⚠️  IMPORTANT: Change the default password after first login!")
 }
 
 func loadConfig() Config {
@@ -58,6 +106,8 @@ func loadConfig() Config {
 		DatabaseName:  getEnv("MONGODB_DATABASE", "omegle_app"),
 		AdminUsername: getEnv("ADMIN_USERNAME", "admin"),
 		AdminPassword: getEnv("ADMIN_PASSWORD", "admin123"),
+		AdminEmail:    getEnv("ADMIN_EMAIL", "admin@omegle-clone.local"),
+		Environment:   getEnv("APP_ENV", "development"),
 	}
 }
 
@@ -114,10 +164,10 @@ func runMigration(database *mongo.Database, config Config) error {
 		return fmt.Errorf("failed to seed initial data: %w", err)
 	}
 
-	// Step 3: Create admin user
-	log.Println("👑 Creating admin user...")
-	if err := createAdminUser(database, config); err != nil {
-		return fmt.Errorf("failed to create admin user: %w", err)
+	// Step 3: Create admin users - ENHANCED
+	log.Println("👑 Creating admin users...")
+	if err := createAdminUsers(database, config); err != nil {
+		return fmt.Errorf("failed to create admin users: %w", err)
 	}
 
 	// Step 4: Setup initial COTURN servers
@@ -144,6 +194,12 @@ func runMigration(database *mongo.Database, config Config) error {
 		return fmt.Errorf("failed to setup interest categories: %w", err)
 	}
 
+	// Step 8: Create admin-specific initial data - NEW
+	log.Println("🔧 Setting up admin-specific data...")
+	if err := setupAdminData(database, config); err != nil {
+		return fmt.Errorf("failed to setup admin data: %w", err)
+	}
+
 	return nil
 }
 
@@ -161,22 +217,7 @@ func getCollectionSetups() []CollectionSetup {
 				{Keys: bson.D{{Key: "created_at", Value: 1}}},
 				{Keys: bson.D{{Key: "last_seen", Value: 1}}},
 				{Keys: bson.D{{Key: "is_banned", Value: 1}}},
-				{Keys: bson.D{{Key: "ban_expiry", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetSparse(true)},
-			},
-		},
-		{
-			Name: "registered_users",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "username", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "is_verified", Value: 1}}},
-				{Keys: bson.D{{Key: "is_active", Value: 1}}},
-				{Keys: bson.D{{Key: "is_banned", Value: 1}}},
-				{Keys: bson.D{{Key: "region", Value: 1}}},
-				{Keys: bson.D{{Key: "language", Value: 1}}},
-				{Keys: bson.D{{Key: "interests", Value: 1}}},
-				{Keys: bson.D{{Key: "created_at", Value: 1}}},
-				{Keys: bson.D{{Key: "last_login", Value: 1}}},
+				{Keys: bson.D{{Key: "region", Value: 1}, {Key: "language", Value: 1}, {Key: "is_online", Value: 1}}},
 			},
 		},
 		{
@@ -189,21 +230,17 @@ func getCollectionSetups() []CollectionSetup {
 				{Keys: bson.D{{Key: "chat_type", Value: 1}}},
 				{Keys: bson.D{{Key: "started_at", Value: 1}}},
 				{Keys: bson.D{{Key: "ended_at", Value: 1}}},
-				{Keys: bson.D{{Key: "region", Value: 1}}},
-				{Keys: bson.D{{Key: "language", Value: 1}}},
-				{Keys: bson.D{{Key: "interests", Value: 1}}},
 				{Keys: bson.D{{Key: "user1_id", Value: 1}, {Key: "user2_id", Value: 1}}},
 			},
 		},
 		{
 			Name: "messages",
 			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "chat_id", Value: 1}}},
 				{Keys: bson.D{{Key: "room_id", Value: 1}}},
 				{Keys: bson.D{{Key: "user_id", Value: 1}}},
 				{Keys: bson.D{{Key: "timestamp", Value: 1}}},
-				{Keys: bson.D{{Key: "type", Value: 1}}},
 				{Keys: bson.D{{Key: "flagged", Value: 1}}},
-				{Keys: bson.D{{Key: "deleted", Value: 1}}},
 				{Keys: bson.D{{Key: "room_id", Value: 1}, {Key: "timestamp", Value: 1}}},
 			},
 		},
@@ -221,6 +258,8 @@ func getCollectionSetups() []CollectionSetup {
 			Indexes: []mongo.IndexModel{
 				{Keys: bson.D{{Key: "token", Value: 1}}, Options: options.Index().SetUnique(true)},
 				{Keys: bson.D{{Key: "user_id", Value: 1}}},
+				{Keys: bson.D{{Key: "admin_id", Value: 1}}},
+				{Keys: bson.D{{Key: "token_type", Value: 1}}},
 				{Keys: bson.D{{Key: "expires_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
 			},
 		},
@@ -255,6 +294,18 @@ func getCollectionSetups() []CollectionSetup {
 				{Keys: bson.D{{Key: "created_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(86400)}, // 24 hours TTL
 			},
 		},
+		// Admin-specific collections - ENHANCED
+		{
+			Name: "admins",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "username", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "email", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "role", Value: 1}}},
+				{Keys: bson.D{{Key: "is_active", Value: 1}}},
+				{Keys: bson.D{{Key: "created_at", Value: 1}}},
+				{Keys: bson.D{{Key: "last_login", Value: 1}}},
+			},
+		},
 		{
 			Name: "admin_activity_logs",
 			Indexes: []mongo.IndexModel{
@@ -263,91 +314,54 @@ func getCollectionSetups() []CollectionSetup {
 				{Keys: bson.D{{Key: "action", Value: 1}}},
 				{Keys: bson.D{{Key: "method", Value: 1}}},
 				{Keys: bson.D{{Key: "path", Value: 1}}},
+				{Keys: bson.D{{Key: "success", Value: 1}}},
+			},
+		},
+		{
+			Name: "security_alerts",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "type", Value: 1}}},
+				{Keys: bson.D{{Key: "level", Value: 1}}},
+				{Keys: bson.D{{Key: "resolved", Value: 1}}},
+				{Keys: bson.D{{Key: "created_at", Value: 1}}},
+				{Keys: bson.D{{Key: "source", Value: 1}}},
+			},
+		},
+		{
+			Name: "admin_rate_limits",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "key", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "window_end", Value: 1}}},
+				{Keys: bson.D{{Key: "created_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(3600)}, // 1 hour TTL
+			},
+		},
+		{
+			Name: "token_blacklist",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "token", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "expires_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0)},
+				{Keys: bson.D{{Key: "created_at", Value: 1}}},
+			},
+		},
+		{
+			Name: "banned_words",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "word", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "is_active", Value: 1}}},
+				{Keys: bson.D{{Key: "category", Value: 1}}},
+			},
+		},
+		{
+			Name: "banned_countries",
+			Indexes: []mongo.IndexModel{
+				{Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)},
+				{Keys: bson.D{{Key: "is_active", Value: 1}}},
 			},
 		},
 		{
 			Name: "app_settings",
 			Indexes: []mongo.IndexModel{
 				{Keys: bson.D{{Key: "updated_at", Value: 1}}},
-				{Keys: bson.D{{Key: "setting_key", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true)},
-			},
-		},
-		{
-			Name: "user_settings",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "user_id", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "updated_at", Value: 1}}},
-			},
-		},
-		{
-			Name: "blocked_users",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "user_id", Value: 1}}},
-				{Keys: bson.D{{Key: "blocked_user_id", Value: 1}}},
-				{Keys: bson.D{{Key: "blocked_at", Value: 1}}},
-				{Keys: bson.D{{Key: "expires_at", Value: 1}}, Options: options.Index().SetExpireAfterSeconds(0).SetSparse(true)},
-				{Keys: bson.D{{Key: "user_id", Value: 1}, {Key: "blocked_user_id", Value: 1}}, Options: options.Index().SetUnique(true)},
-			},
-		},
-		{
-			Name: "analytics_events",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "event_type", Value: 1}}},
-				{Keys: bson.D{{Key: "user_id", Value: 1}}},
-				{Keys: bson.D{{Key: "timestamp", Value: 1}}},
-				{Keys: bson.D{{Key: "region", Value: 1}}},
-				{Keys: bson.D{{Key: "event_type", Value: 1}, {Key: "timestamp", Value: 1}}},
-			},
-		},
-		{
-			Name: "match_queue",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "user_id", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "chat_type", Value: 1}}},
-				{Keys: bson.D{{Key: "region", Value: 1}}},
-				{Keys: bson.D{{Key: "language", Value: 1}}},
-				{Keys: bson.D{{Key: "interests", Value: 1}}},
-				{Keys: bson.D{{Key: "created_at", Value: 1}}},
-				{Keys: bson.D{{Key: "status", Value: 1}}},
-			},
-		},
-		{
-			Name: "regions",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "is_active", Value: 1}}},
-			},
-		},
-		{
-			Name: "languages",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "code", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "is_active", Value: 1}}},
-			},
-		},
-		{
-			Name: "interest_categories",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "name", Value: 1}}, Options: options.Index().SetUnique(true)},
-				{Keys: bson.D{{Key: "is_active", Value: 1}}},
-				{Keys: bson.D{{Key: "category", Value: 1}}},
-			},
-		},
-		{
-			Name: "banned_content",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "type", Value: 1}}},
-				{Keys: bson.D{{Key: "content", Value: 1}}},
-				{Keys: bson.D{{Key: "is_active", Value: 1}}},
-			},
-		},
-		{
-			Name: "moderation_queue",
-			Indexes: []mongo.IndexModel{
-				{Keys: bson.D{{Key: "status", Value: 1}}},
-				{Keys: bson.D{{Key: "priority", Value: 1}}},
-				{Keys: bson.D{{Key: "created_at", Value: 1}}},
-				{Keys: bson.D{{Key: "assigned_to", Value: 1}}},
 			},
 		},
 	}
@@ -393,46 +407,253 @@ func seedInitialData(database *mongo.Database, config Config) error {
 	return nil
 }
 
-func createAdminUser(database *mongo.Database, config Config) error {
+// createAdminUsers creates comprehensive admin users - ENHANCED
+func createAdminUsers(database *mongo.Database, config Config) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	collection := database.Collection("admins")
 
-	// Check if admin user already exists
-	count, err := collection.CountDocuments(ctx, bson.M{"username": config.AdminUsername})
+	// Check if any admin users already exist
+	count, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
 		return err
 	}
 
 	if count > 0 {
-		log.Printf("  👑 Admin user already exists: %s", config.AdminUsername)
+		log.Printf("  👑 Admin users already exist (%d found)", count)
 		return nil
 	}
 
-	// Hash admin password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(config.AdminPassword), bcrypt.DefaultCost)
+	// Define admin users to create
+	adminUsers := []AdminUser{
+		{
+			ID:       primitive.NewObjectID().Hex(),
+			Username: config.AdminUsername,
+			Email:    config.AdminEmail,
+			Role:     "super_admin",
+			Permissions: []string{
+				"super_admin",
+				"view_dashboard",
+				"manage_users",
+				"monitor_chats",
+				"manage_reports",
+				"manage_content",
+				"view_analytics",
+				"manage_coturn",
+				"manage_settings",
+				"system_admin",
+			},
+			IsActive: true,
+			Profile: AdminProfile{
+				FirstName:   "Super",
+				LastName:    "Admin",
+				DisplayName: "Super Administrator",
+				Timezone:    "UTC",
+			},
+			Security: AdminSecurity{
+				FailedAttempts:    0,
+				TwoFactorEnabled:  false,
+				PasswordChangedAt: time.Now(),
+				LastActivity:      time.Now(),
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		},
+	}
+
+	// Add additional admin users for different environments
+	if config.Environment == "development" {
+		// Add demo admin users for development
+		adminUsers = append(adminUsers, []AdminUser{
+			{
+				ID:       primitive.NewObjectID().Hex(),
+				Username: "demo-admin",
+				Email:    "demo@omegle-clone.local",
+				Role:     "admin",
+				Permissions: []string{
+					"view_dashboard",
+					"manage_users",
+					"monitor_chats",
+					"manage_reports",
+					"manage_content",
+					"view_analytics",
+				},
+				IsActive: true,
+				Profile: AdminProfile{
+					FirstName:   "Demo",
+					LastName:    "Admin",
+					DisplayName: "Demo Administrator",
+					Timezone:    "UTC",
+				},
+				Security: AdminSecurity{
+					FailedAttempts:    0,
+					TwoFactorEnabled:  false,
+					PasswordChangedAt: time.Now(),
+					LastActivity:      time.Now(),
+				},
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+			{
+				ID:       primitive.NewObjectID().Hex(),
+				Username: "moderator",
+				Email:    "moderator@omegle-clone.local",
+				Role:     "moderator",
+				Permissions: []string{
+					"view_dashboard",
+					"monitor_chats",
+					"manage_reports",
+					"manage_content",
+				},
+				IsActive: true,
+				Profile: AdminProfile{
+					FirstName:   "Demo",
+					LastName:    "Moderator",
+					DisplayName: "Content Moderator",
+					Timezone:    "UTC",
+				},
+				Security: AdminSecurity{
+					FailedAttempts:    0,
+					TwoFactorEnabled:  false,
+					PasswordChangedAt: time.Now(),
+					LastActivity:      time.Now(),
+				},
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			},
+		}...)
+	}
+
+	// Hash passwords and insert admin users
+	for i, admin := range adminUsers {
+		// Use same password for all demo users in development
+		password := config.AdminPassword
+		if admin.Username == "demo-admin" {
+			password = "demo123"
+		} else if admin.Username == "moderator" {
+			password = "mod123"
+		}
+
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+
+		adminUsers[i].Password = string(hashedPassword)
+
+		_, err = collection.InsertOne(ctx, adminUsers[i])
+		if err != nil {
+			return err
+		}
+
+		log.Printf("  ✅ Created admin user: %s (%s)", admin.Username, admin.Role)
+		if config.Environment == "development" && admin.Username != config.AdminUsername {
+			log.Printf("     Password: %s", password)
+		}
+	}
+
+	return nil
+}
+
+// setupAdminData creates admin-specific initial data - NEW
+func setupAdminData(database *mongo.Database, config Config) error {
+	// Setup banned words
+	if err := setupBannedWords(database); err != nil {
+		return err
+	}
+
+	// Setup initial admin settings
+	if err := setupAdminSettings(database); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setupBannedWords(database *mongo.Database) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	collection := database.Collection("banned_words")
+
+	// Check if banned words already exist
+	count, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
 		return err
 	}
 
-	admin := bson.M{
-		"username":    config.AdminUsername,
-		"password":    string(hashedPassword),
-		"email":       "admin@omegle-clone.com",
-		"role":        "super_admin",
-		"permissions": []string{"all"},
-		"is_active":   true,
-		"created_at":  time.Now(),
-		"updated_at":  time.Now(),
+	if count > 0 {
+		log.Printf("  🚫 Banned words already exist")
+		return nil
 	}
 
-	_, err = collection.InsertOne(ctx, admin)
+	// Default banned words
+	bannedWords := []bson.M{
+		{"word": "spam", "category": "general", "is_active": true, "created_at": time.Now()},
+		{"word": "scam", "category": "general", "is_active": true, "created_at": time.Now()},
+		{"word": "phishing", "category": "security", "is_active": true, "created_at": time.Now()},
+		{"word": "fraud", "category": "security", "is_active": true, "created_at": time.Now()},
+		{"word": "hack", "category": "security", "is_active": true, "created_at": time.Now()},
+	}
+
+	for _, word := range bannedWords {
+		_, err = collection.InsertOne(ctx, word)
+		if err != nil {
+			log.Printf("  ⚠️  Warning: Failed to insert banned word: %v", err)
+		}
+	}
+
+	log.Printf("  ✅ Created %d banned words", len(bannedWords))
+	return nil
+}
+
+func setupAdminSettings(database *mongo.Database) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	collection := database.Collection("admin_settings")
+
+	// Check if admin settings already exist
+	count, err := collection.CountDocuments(ctx, bson.M{})
 	if err != nil {
 		return err
 	}
 
-	log.Printf("  ✅ Created admin user: %s", config.AdminUsername)
+	if count > 0 {
+		log.Printf("  ⚙️  Admin settings already exist")
+		return nil
+	}
+
+	adminSettings := bson.M{
+		"panel_title":             "Omegle Admin Panel",
+		"items_per_page":          50,
+		"session_timeout_hours":   8,
+		"auto_refresh_enabled":    true,
+		"auto_refresh_interval":   30,
+		"activity_logging":        true,
+		"security_alerts":         true,
+		"two_factor_required":     false,
+		"ip_whitelist_enabled":    false,
+		"allowed_ips":             []string{},
+		"maintenance_mode":        false,
+		"maintenance_message":     "System is under maintenance. Please check back later.",
+		"backup_enabled":          true,
+		"backup_retention_days":   30,
+		"log_retention_days":      90,
+		"rate_limit_enabled":      true,
+		"max_failed_logins":       5,
+		"account_lockout_minutes": 30,
+		"created_at":              time.Now(),
+		"updated_at":              time.Now(),
+	}
+
+	_, err = collection.InsertOne(ctx, adminSettings)
+	if err != nil {
+		return err
+	}
+
+	log.Printf("  ✅ Created admin settings")
 	return nil
 }
 
@@ -499,46 +720,13 @@ func setupCOTURNServers(database *mongo.Database) error {
 			"updated_at":    time.Now(),
 			"last_checked":  time.Now(),
 		},
-		{
-			"name":          "AP Southeast COTURN",
-			"region":        "ap-southeast-1",
-			"url":           "turn:turn4.example.com:3478",
-			"username":      "turn_user",
-			"credential":    "turn_secret",
-			"priority":      1,
-			"max_users":     1000,
-			"current_users": 0,
-			"is_active":     true,
-			"status":        "offline",
-			"created_at":    time.Now(),
-			"updated_at":    time.Now(),
-			"last_checked":  time.Now(),
-		},
-		{
-			"name":          "AP Northeast COTURN",
-			"region":        "ap-northeast-1",
-			"url":           "turn:turn5.example.com:3478",
-			"username":      "turn_user",
-			"credential":    "turn_secret",
-			"priority":      1,
-			"max_users":     1000,
-			"current_users": 0,
-			"is_active":     true,
-			"status":        "offline",
-			"created_at":    time.Now(),
-			"updated_at":    time.Now(),
-			"last_checked":  time.Now(),
-		},
 	}
 
-	// Convert []bson.M to []interface{}
-	serverInterfaces := make([]interface{}, len(servers))
-	for i, v := range servers {
-		serverInterfaces[i] = v
-	}
-	_, err = collection.InsertMany(ctx, serverInterfaces)
-	if err != nil {
-		return err
+	for _, server := range servers {
+		_, err = collection.InsertOne(ctx, server)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("  ✅ Created %d COTURN servers", len(servers))
@@ -564,15 +752,9 @@ func createAppSettings(database *mongo.Database) error {
 
 	defaultSettings := bson.M{
 		"app_name":                "Omegle Clone",
-		"app_description":         "Random video chat application",
-		"max_users_per_room":      2,
-		"chat_timeout":            30, // 30 minutes
-		"enable_moderation":       true,
-		"enable_profanity_filter": true,
-		"enable_age_verification": false,
-		"minimum_age":             13,
+		"app_version":             "1.0.0",
 		"maintenance_mode":        false,
-		"maintenance_message":     "The system is currently under maintenance. Please try again later.",
+		"maintenance_message":     "We're currently performing maintenance. Please try again later.",
 		"banned_words":            []string{"spam", "scam", "phishing"},
 		"banned_countries":        []string{},
 		"max_file_size":           10485760, // 10MB
@@ -627,19 +809,13 @@ func setupRegions(database *mongo.Database) error {
 		{"code": "eu-central-1", "name": "EU Central (Germany)", "country": "DE", "is_active": true, "created_at": time.Now()},
 		{"code": "ap-southeast-1", "name": "Asia Pacific (Singapore)", "country": "SG", "is_active": true, "created_at": time.Now()},
 		{"code": "ap-northeast-1", "name": "Asia Pacific (Tokyo)", "country": "JP", "is_active": true, "created_at": time.Now()},
-		{"code": "ap-south-1", "name": "Asia Pacific (Mumbai)", "country": "IN", "is_active": true, "created_at": time.Now()},
-		{"code": "ca-central-1", "name": "Canada Central", "country": "CA", "is_active": true, "created_at": time.Now()},
-		{"code": "sa-east-1", "name": "South America (São Paulo)", "country": "BR", "is_active": true, "created_at": time.Now()},
-		{"code": "af-south-1", "name": "Africa (Cape Town)", "country": "ZA", "is_active": true, "created_at": time.Now()},
 	}
 
-	regionInterfaces := make([]interface{}, len(regions))
-	for i, v := range regions {
-		regionInterfaces[i] = v
-	}
-	_, err = collection.InsertMany(ctx, regionInterfaces)
-	if err != nil {
-		return err
+	for _, region := range regions {
+		_, err = collection.InsertOne(ctx, region)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("  ✅ Created %d regions", len(regions))
@@ -674,20 +850,13 @@ func setupLanguages(database *mongo.Database) error {
 		{"code": "ja", "name": "Japanese", "native_name": "日本語", "is_active": true, "created_at": time.Now()},
 		{"code": "ko", "name": "Korean", "native_name": "한국어", "is_active": true, "created_at": time.Now()},
 		{"code": "zh", "name": "Chinese", "native_name": "中文", "is_active": true, "created_at": time.Now()},
-		{"code": "ar", "name": "Arabic", "native_name": "العربية", "is_active": true, "created_at": time.Now()},
-		{"code": "hi", "name": "Hindi", "native_name": "हिन्दी", "is_active": true, "created_at": time.Now()},
-		{"code": "tr", "name": "Turkish", "native_name": "Türkçe", "is_active": true, "created_at": time.Now()},
-		{"code": "nl", "name": "Dutch", "native_name": "Nederlands", "is_active": true, "created_at": time.Now()},
-		{"code": "sv", "name": "Swedish", "native_name": "Svenska", "is_active": true, "created_at": time.Now()},
 	}
 
-	languageInterfaces := make([]interface{}, len(languages))
-	for i, v := range languages {
-		languageInterfaces[i] = v
-	}
-	_, err = collection.InsertMany(ctx, languageInterfaces)
-	if err != nil {
-		return err
+	for _, language := range languages {
+		_, err = collection.InsertOne(ctx, language)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("  ✅ Created %d languages", len(languages))
@@ -712,56 +881,23 @@ func setupInterestCategories(database *mongo.Database) error {
 	}
 
 	interests := []bson.M{
-		// Technology
-		{"name": "Programming", "category": "technology", "description": "Software development and coding", "is_active": true, "created_at": time.Now()},
-		{"name": "Gaming", "category": "technology", "description": "Video games and gaming culture", "is_active": true, "created_at": time.Now()},
-		{"name": "Tech News", "category": "technology", "description": "Latest technology trends and news", "is_active": true, "created_at": time.Now()},
-		{"name": "Crypto", "category": "technology", "description": "Cryptocurrency and blockchain", "is_active": true, "created_at": time.Now()},
-		{"name": "AI/ML", "category": "technology", "description": "Artificial Intelligence and Machine Learning", "is_active": true, "created_at": time.Now()},
-
-		// Entertainment
-		{"name": "Movies", "category": "entertainment", "description": "Films and cinema", "is_active": true, "created_at": time.Now()},
-		{"name": "TV Shows", "category": "entertainment", "description": "Television series and shows", "is_active": true, "created_at": time.Now()},
-		{"name": "Music", "category": "entertainment", "description": "Music and artists", "is_active": true, "created_at": time.Now()},
-		{"name": "Anime", "category": "entertainment", "description": "Japanese animation", "is_active": true, "created_at": time.Now()},
-		{"name": "Books", "category": "entertainment", "description": "Literature and reading", "is_active": true, "created_at": time.Now()},
-
-		// Sports & Fitness
-		{"name": "Football", "category": "sports", "description": "American football", "is_active": true, "created_at": time.Now()},
-		{"name": "Soccer", "category": "sports", "description": "Association football", "is_active": true, "created_at": time.Now()},
-		{"name": "Basketball", "category": "sports", "description": "Basketball sports", "is_active": true, "created_at": time.Now()},
-		{"name": "Fitness", "category": "sports", "description": "Exercise and fitness", "is_active": true, "created_at": time.Now()},
-		{"name": "Yoga", "category": "sports", "description": "Yoga and meditation", "is_active": true, "created_at": time.Now()},
-
-		// Hobbies & Arts
-		{"name": "Photography", "category": "hobbies", "description": "Photography and visual arts", "is_active": true, "created_at": time.Now()},
-		{"name": "Cooking", "category": "hobbies", "description": "Culinary arts and recipes", "is_active": true, "created_at": time.Now()},
-		{"name": "Travel", "category": "hobbies", "description": "Travel and exploration", "is_active": true, "created_at": time.Now()},
-		{"name": "Art", "category": "hobbies", "description": "Visual and creative arts", "is_active": true, "created_at": time.Now()},
-		{"name": "Music Production", "category": "hobbies", "description": "Creating and producing music", "is_active": true, "created_at": time.Now()},
-
-		// Education & Learning
-		{"name": "Science", "category": "education", "description": "Scientific discussions", "is_active": true, "created_at": time.Now()},
-		{"name": "History", "category": "education", "description": "Historical topics", "is_active": true, "created_at": time.Now()},
-		{"name": "Language Learning", "category": "education", "description": "Learning new languages", "is_active": true, "created_at": time.Now()},
-		{"name": "Philosophy", "category": "education", "description": "Philosophical discussions", "is_active": true, "created_at": time.Now()},
-		{"name": "Current Events", "category": "education", "description": "News and current affairs", "is_active": true, "created_at": time.Now()},
-
-		// Lifestyle
-		{"name": "Fashion", "category": "lifestyle", "description": "Fashion and style", "is_active": true, "created_at": time.Now()},
-		{"name": "Health", "category": "lifestyle", "description": "Health and wellness", "is_active": true, "created_at": time.Now()},
-		{"name": "Relationships", "category": "lifestyle", "description": "Dating and relationships", "is_active": true, "created_at": time.Now()},
-		{"name": "Career", "category": "lifestyle", "description": "Career and professional development", "is_active": true, "created_at": time.Now()},
-		{"name": "Mental Health", "category": "lifestyle", "description": "Mental health and wellbeing", "is_active": true, "created_at": time.Now()},
+		{"name": "Gaming", "description": "Video games and gaming", "is_active": true, "created_at": time.Now()},
+		{"name": "Music", "description": "Music and musical instruments", "is_active": true, "created_at": time.Now()},
+		{"name": "Movies", "description": "Films and television", "is_active": true, "created_at": time.Now()},
+		{"name": "Sports", "description": "Sports and fitness", "is_active": true, "created_at": time.Now()},
+		{"name": "Technology", "description": "Technology and programming", "is_active": true, "created_at": time.Now()},
+		{"name": "Art", "description": "Visual arts and creativity", "is_active": true, "created_at": time.Now()},
+		{"name": "Travel", "description": "Travel and exploration", "is_active": true, "created_at": time.Now()},
+		{"name": "Books", "description": "Literature and reading", "is_active": true, "created_at": time.Now()},
+		{"name": "Food", "description": "Cooking and cuisine", "is_active": true, "created_at": time.Now()},
+		{"name": "Science", "description": "Science and research", "is_active": true, "created_at": time.Now()},
 	}
 
-	interestInterfaces := make([]interface{}, len(interests))
-	for i, v := range interests {
-		interestInterfaces[i] = v
-	}
-	_, err = collection.InsertMany(ctx, interestInterfaces)
-	if err != nil {
-		return err
+	for _, interest := range interests {
+		_, err = collection.InsertOne(ctx, interest)
+		if err != nil {
+			return err
+		}
 	}
 
 	log.Printf("  ✅ Created %d interest categories", len(interests))

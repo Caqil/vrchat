@@ -10,7 +10,7 @@ build:
 
 # Run the application
 run:
-	go run ./cmd/server
+	go run ./cmd/server/main.go
 
 # Run tests
 test:

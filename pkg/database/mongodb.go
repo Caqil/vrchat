@@ -61,41 +61,62 @@ func connectToMongoDB(cfg config.MongoConfig) error {
 		SetConnectTimeout(10 * time.Second).        // Connection timeout
 		SetServerSelectionTimeout(5 * time.Second). // Server selection timeout
 		SetHeartbeatInterval(10 * time.Second).     // Heartbeat interval
-		SetRetryWrites(true).                       // Enable retry writes
-		SetRetryReads(true)                         // Enable retry reads
+		SetRetryWrites(true).                       // Retry writes
+		SetRetryReads(true)                         // Retry reads
 
-	// Create MongoDB client
+	// Connect to MongoDB
 	var err error
 	client, err = mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return fmt.Errorf("failed to connect to MongoDB: %w", err)
 	}
 
-	// Ping to verify connection
+	// Ping the database to verify connection
 	if err = client.Ping(ctx, readpref.Primary()); err != nil {
 		return fmt.Errorf("failed to ping MongoDB: %w", err)
 	}
 
-	// Set database
+	// Set the database
 	database = client.Database(cfg.Database)
 
-	// Create indexes
-	if err = createIndexes(); err != nil {
-		log.Printf("Warning: Failed to create indexes: %v", err)
-	}
+	log.Printf("✅ Connected to MongoDB database: %s", cfg.Database)
 
-	log.Printf("Successfully connected to MongoDB database: %s", cfg.Database)
+	// Create initial indexes
+	go func() {
+		if err := createIndexes(); err != nil {
+			log.Printf("Warning: Failed to create indexes: %v", err)
+		}
+	}()
+
+	// Start cleanup routine
+	go func() {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+
+		for range ticker.C {
+			if err := CleanupExpiredData(); err != nil {
+				log.Printf("Cleanup error: %v", err)
+			}
+		}
+	}()
+
 	return nil
 }
 
-// GetClient returns MongoDB client
-func GetClient() *mongo.Client {
-	return client
+// GetDatabase returns the database instance
+func GetDatabase() *mongo.Database {
+	if database == nil {
+		log.Fatal("Database not initialized. Call InitMongoDB first.")
+	}
+	return database
 }
 
-// GetDB returns MongoDB database instance
-func GetDB() *mongo.Database {
-	return database
+// GetClient returns the MongoDB client
+func GetClient() *mongo.Client {
+	if client == nil {
+		log.Fatal("MongoDB client not initialized. Call InitMongoDB first.")
+	}
+	return client
 }
 
 // Disconnect closes MongoDB connection
@@ -108,40 +129,32 @@ func Disconnect() error {
 	return nil
 }
 
-// HealthCheck performs MongoDB health check
-func HealthCheck() error {
-	if client == nil {
-		return fmt.Errorf("MongoDB client not initialized")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	return client.Ping(ctx, readpref.Primary())
-}
-
-// GetConnectionStats returns MongoDB connection statistics
-func GetConnectionStats() map[string]interface{} {
-	if client == nil {
+// Health check function
+func HealthCheck() map[string]interface{} {
+	if database == nil {
 		return map[string]interface{}{
 			"status": "disconnected",
+			"error":  "database not initialized",
 		}
 	}
 
-	// Get server status
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	var serverStatus bson.M
-	err := database.RunCommand(ctx, bson.D{{Key: "serverStatus", Value: 1}}).Decode(&serverStatus)
-	if err != nil {
+	// Ping database
+	if err := client.Ping(ctx, readpref.Primary()); err != nil {
 		return map[string]interface{}{
 			"status": "error",
 			"error":  err.Error(),
 		}
 	}
 
-	connections := serverStatus["connections"].(bson.M)
+	// Get connection stats
+	stats := client.Database("admin").RunCommand(ctx, bson.D{{Key: "serverStatus", Value: 1}})
+	var result bson.M
+	stats.Decode(&result)
+
+	connections := result["connections"].(bson.M)
 
 	return map[string]interface{}{
 		"status":                "connected",
@@ -238,11 +251,10 @@ func createIndexes() error {
 					Keys: bson.D{{Key: "user_id", Value: 1}},
 				},
 				{
-					Keys:    bson.D{{Key: "expires_at", Value: 1}},
-					Options: options.Index().SetExpireAfterSeconds(0), // TTL index
+					Keys: bson.D{{Key: "expires_at", Value: 1}},
 				},
 				{
-					Keys: bson.D{{Key: "is_active", Value: 1}},
+					Keys: bson.D{{Key: "created_at", Value: 1}},
 				},
 			},
 		},
@@ -257,8 +269,64 @@ func createIndexes() error {
 					Keys: bson.D{{Key: "user_id", Value: 1}},
 				},
 				{
-					Keys:    bson.D{{Key: "expires_at", Value: 1}},
-					Options: options.Index().SetExpireAfterSeconds(0), // TTL index
+					Keys: bson.D{{Key: "expires_at", Value: 1}},
+				},
+			},
+		},
+		{
+			collection: "reports",
+			indexes: []mongo.IndexModel{
+				{
+					Keys: bson.D{{Key: "reported_user_id", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "reporter_id", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "status", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "category", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "created_at", Value: 1}},
+				},
+			},
+		},
+		{
+			collection: "bans",
+			indexes: []mongo.IndexModel{
+				{
+					Keys: bson.D{{Key: "user_id", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "ip_address", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "ban_type", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "is_active", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "expires_at", Value: 1}},
+				},
+			},
+		},
+		{
+			collection: "messages",
+			indexes: []mongo.IndexModel{
+				{
+					Keys: bson.D{{Key: "chat_id", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "sender_id", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "timestamp", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "message_type", Value: 1}},
 				},
 			},
 		},
@@ -272,43 +340,68 @@ func createIndexes() error {
 					Keys: bson.D{{Key: "is_active", Value: 1}},
 				},
 				{
-					Keys: bson.D{{Key: "status", Value: 1}},
-				},
-				{
 					Keys: bson.D{{Key: "priority", Value: 1}},
 				},
 			},
 		},
 		{
-			collection: "reports",
+			collection: "admins",
 			indexes: []mongo.IndexModel{
 				{
-					Keys: bson.D{{Key: "reporter_id", Value: 1}},
+					Keys:    bson.D{{Key: "username", Value: 1}},
+					Options: options.Index().SetUnique(true),
 				},
 				{
-					Keys: bson.D{{Key: "reported_user_id", Value: 1}},
+					Keys:    bson.D{{Key: "email", Value: 1}},
+					Options: options.Index().SetUnique(true),
 				},
 				{
-					Keys: bson.D{{Key: "chat_id", Value: 1}},
+					Keys: bson.D{{Key: "role", Value: 1}},
 				},
 				{
-					Keys: bson.D{{Key: "status", Value: 1}},
-				},
-				{
-					Keys: bson.D{{Key: "created_at", Value: 1}},
+					Keys: bson.D{{Key: "is_active", Value: 1}},
 				},
 			},
 		},
 		{
-			collection: "ip_cache",
+			collection: "interests",
 			indexes: []mongo.IndexModel{
 				{
-					Keys:    bson.D{{Key: "ip", Value: 1}},
+					Keys:    bson.D{{Key: "name", Value: 1}},
 					Options: options.Index().SetUnique(true),
 				},
 				{
-					Keys:    bson.D{{Key: "created_at", Value: 1}},
-					Options: options.Index().SetExpireAfterSeconds(86400), // 24 hours TTL
+					Keys: bson.D{{Key: "is_active", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "category", Value: 1}},
+				},
+			},
+		},
+		{
+			collection: "regions",
+			indexes: []mongo.IndexModel{
+				{
+					Keys:    bson.D{{Key: "code", Value: 1}},
+					Options: options.Index().SetUnique(true),
+				},
+				{
+					Keys: bson.D{{Key: "country", Value: 1}},
+				},
+				{
+					Keys: bson.D{{Key: "is_active", Value: 1}},
+				},
+			},
+		},
+		{
+			collection: "languages",
+			indexes: []mongo.IndexModel{
+				{
+					Keys:    bson.D{{Key: "code", Value: 1}},
+					Options: options.Index().SetUnique(true),
+				},
+				{
+					Keys: bson.D{{Key: "is_active", Value: 1}},
 				},
 			},
 		},
@@ -319,13 +412,22 @@ func createIndexes() error {
 					Keys: bson.D{{Key: "admin_id", Value: 1}},
 				},
 				{
+					Keys: bson.D{{Key: "action", Value: 1}},
+				},
+				{
 					Keys: bson.D{{Key: "timestamp", Value: 1}},
 				},
+			},
+		},
+		{
+			collection: "ip_cache",
+			indexes: []mongo.IndexModel{
 				{
-					Keys: bson.D{{Key: "method", Value: 1}},
+					Keys:    bson.D{{Key: "ip_address", Value: 1}},
+					Options: options.Index().SetUnique(true),
 				},
 				{
-					Keys: bson.D{{Key: "path", Value: 1}},
+					Keys: bson.D{{Key: "created_at", Value: 1}},
 				},
 			},
 		},

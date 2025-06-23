@@ -293,7 +293,7 @@ func GenerateSessionID() string {
 
 // IsUserBanned checks if user is banned
 func IsUserBanned(userID string) bool {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("users")
 
 	var user struct {
@@ -324,7 +324,7 @@ func IsUserBanned(userID string) bool {
 
 // UpdateUserLastSeen updates user's last seen timestamp
 func UpdateUserLastSeen(userID string) {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("users")
 
 	collection.UpdateOne(context.Background(),
@@ -334,7 +334,7 @@ func UpdateUserLastSeen(userID string) {
 
 // IsAdminActive checks if admin account is active
 func IsAdminActive(adminID string) bool {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("admins")
 
 	var admin struct {
@@ -351,7 +351,7 @@ func IsAdminActive(adminID string) bool {
 
 // LogAdminActivity logs admin activity
 func LogAdminActivity(activity map[string]interface{}) {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("admin_activity_logs")
 
 	collection.InsertOne(context.Background(), activity)

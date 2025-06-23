@@ -12,7 +12,7 @@ import (
 
 func SetupRoutes(router *gin.Engine, hub *websocket.Hub) {
 	// Initialize database
-	db := database.GetDB()
+	db := database.GetDatabase()
 
 	// Initialize services
 	userService := services.NewUserService(db)
@@ -124,6 +124,6 @@ func SetupRoutes(router *gin.Engine, hub *websocket.Hub) {
 	SetupAdminRoutes(router, adminHandler)
 
 	// Static files
-	router.Static("/static", "./web/static")
-	router.LoadHTMLGlob("web/templates/*")
+	// router.Static("/static", "./web/static")
+	// router.LoadHTMLGlob("web/templates/*")
 }

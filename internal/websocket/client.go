@@ -407,7 +407,7 @@ func (c *Client) sendSuccess(message string, data map[string]interface{}) {
 
 // storeMessage stores chat message in database
 func (c *Client) storeMessage(msg *ChatMessage) error {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("messages")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

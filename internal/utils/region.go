@@ -193,7 +193,7 @@ func isPrivateIP(ip string) bool {
 
 // getRegionFromCache gets region info from cache
 func getRegionFromCache(ip string) *RegionInfo {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("ip_cache")
 
 	var result struct {
@@ -216,7 +216,7 @@ func getRegionFromCache(ip string) *RegionInfo {
 
 // cacheRegionInfo caches region info
 func cacheRegionInfo(ip string, region *RegionInfo) {
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("ip_cache")
 
 	doc := bson.M{

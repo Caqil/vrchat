@@ -63,7 +63,18 @@ func Init() {
 		instance = NewLogger(config)
 	})
 }
-func LogSystemAction(action string, metadata map[string]interface{})
+
+// LogSystemAction logs system-level actions
+func LogSystemAction(action string, metadata map[string]any) {
+	fields := logrus.Fields{
+		"action": action,
+		"type":   "system_action",
+	}
+	for k, v := range metadata {
+		fields[k] = v
+	}
+	WithFields(fields).Info("System Action")
+}
 
 // NewLogger creates a new logger instance
 func NewLogger(config Config) *Logger {

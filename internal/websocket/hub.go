@@ -589,7 +589,7 @@ func (h *Hub) cleanupInactiveConnections() {
 func (h *Hub) storeStatistics() {
 	stats := h.GetStats()
 
-	db := database.GetDB()
+	db := database.GetDatabase()
 	collection := db.Collection("websocket_stats")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)

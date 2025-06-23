@@ -158,24 +158,6 @@ func RateLimit() gin.HandlerFunc {
 	}
 }
 
-// AdminRateLimit middleware for admin endpoints
-func AdminRateLimit() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		key := getClientKey(c)
-
-		if !adminLimiter.Allow(key) {
-			c.Header("X-RateLimit-Limit", "200")
-			c.Header("X-RateLimit-Remaining", "0")
-
-			utils.ErrorResponse(c, http.StatusTooManyRequests, "Admin rate limit exceeded")
-			c.Abort()
-			return
-		}
-
-		c.Header("X-RateLimit-Limit", "200")
-		c.Next()
-	}
-}
 
 // WebSocketRateLimit middleware for WebSocket connections
 func WebSocketRateLimit() gin.HandlerFunc {
